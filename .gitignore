@@ -1,0 +1,11 @@
+# Real env files (only *.env.example is committed)
+.env
+*.env
+
+# IDEs
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# OS
+.DS_Store
