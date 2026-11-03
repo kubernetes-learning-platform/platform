@@ -49,9 +49,10 @@ The canonical copies live in `lint/`. `sync.sh` copies them into a repo, and the
 ## 📏 Conventions
 
 - **Conventional Commits, strictly:** `feat: short description`. One line, no body, no co-author trailers.
-- **PR titles** use the same format. PRs are squash-merged and the squash commit is the PR title, so `main` reads as one clean line per change.
-- **Trunk-based:** short-lived branches off `main`, deleted after merge.
-- Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `ci`, `build`, `chore`.
+- **PR titles** use the same format, at most 72 characters, no trailing period. PRs are squash-merged and the squash commit is the PR title, so `main` reads as one clean line per change. The `pr-title` check fails any PR whose title breaks this.
+- **Branches** are `type/anything`, e.g. `feat/warm-pool`, `fix/harness-reconnect`, `ci/pr-title-check`. Same types as commits, no issue number needed, not checked by CI. Short-lived, cut from `main`, deleted after merge.
+- **Branches for an issue:** use the issue's **Create a branch** button and replace GitHub's suggested name (`12-add-warm-pool`) with one that follows the convention. The branch and its PR stay linked to the issue. From the CLI: `gh issue develop 12 --name feat/warm-pool --checkout`.
+- Types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`, `style`.
 
 ## 🚀 deploy/
 
