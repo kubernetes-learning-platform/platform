@@ -3,6 +3,10 @@ name: copilot-review
 # Reusable: every other repo calls this from its own copilot-review.yml.
 # The pull_request trigger runs it on platform's own PRs.
 # One review per PR (never on later pushes) to save Copilot credits.
+#
+# A reusable workflow can't raise its caller's permissions, so callers grant:
+#   permissions:
+#     pull-requests: write
 on:
   workflow_call:
   pull_request:
@@ -13,33 +17,44 @@ permissions: {}
 jobs:
   request:
     name: Request Copilot review
+    # Fork PRs get a read-only token, so they're skipped
     if: >-
       !github.event.pull_request.draft &&
       github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
       !contains(github.event.pull_request.labels.*.name, 'skip-copilot')
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
       pull-requests: write
     steps:
-      - name: Count non-Markdown files
-        id: changes
+      - name: Check changed files and earlier reviews
+        id: check
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          code_files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename' | grep -cv '\.md$' || true)
-          echo "code_files=$code_files" >> "$GITHUB_OUTPUT"
-          echo "Non-Markdown files changed: $code_files"
+          # API errors fail the step instead of silently skipping the review
+          code_files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate \
+            --jq '[.[] | select(.filename | endswith(".md") | not)] | length' | awk '{n += $1} END {print n + 0}')
+          reviews=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+            --jq '[.[] | select(.user.type == "Bot" and ((.user.login // "") | startswith("copilot")))] | length' | awk '{n += $1} END {print n + 0}')
+          echo "Non-Markdown files changed: $code_files, earlier Copilot reviews: $reviews"
+
+          if [[ "$code_files" -gt 0 && "$reviews" -eq 0 ]]; then
+            echo "request=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "request=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Request review from Copilot
-        if: steps.changes.outputs.code_files != '0'
+        if: steps.check.outputs.request == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: |
           gh api -X POST "repos/$REPO/pulls/$PR/requested_reviewers" \
-            -f 'reviewers[]=copilot-pull-request-reviewer[bot]' \
-            --jq '[.requested_reviewers[].login] | "Requested reviewers: \(join(", "))"'
+            -f 'reviewers[]=copilot-pull-request-reviewer[bot]' --silent
+          echo "Requested a review from Copilot"
