@@ -20,6 +20,7 @@ Every workflow here is `on: workflow_call`. The other repos call them instead of
 | `container-publish.yml` | buildx → GHCR, tagged with the commit SHA and version | `api`, `web`, lesson images |
 | `release-binary.yml` | `dotnet publish` for linux-x64 and linux-arm64 → GitHub Release | `sandbox` |
 | `vm-image.yml` | Builds the VM base image with the pinned harness and lesson images | `sandbox` |
+| `pr-title.yml` | Fails a PR whose title isn't a Conventional Commit (max 72 characters, no trailing period) | every repo |
 
 A repo's whole CI file is about this long:
 
