@@ -21,6 +21,7 @@ Every workflow here is `on: workflow_call`. The other repos call them instead of
 | `release-binary.yml` | `dotnet publish` for linux-x64 and linux-arm64 → GitHub Release | `sandbox` |
 | `vm-image.yml` | Builds the VM base image with the pinned harness and lesson images | `sandbox` |
 | `pr-title.yml` | Fails a PR whose title isn't a Conventional Commit (max 72 characters, no trailing period) | every repo |
+| `copilot-review.yml` | Requests one Copilot review when a PR opens or is marked ready. Skips drafts, bots, Markdown-only PRs and the `skip-copilot` label. | every repo |
 
 A repo's whole CI file is about this long:
 

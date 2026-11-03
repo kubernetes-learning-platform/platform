@@ -1,0 +1,45 @@
+name: copilot-review
+
+# Reusable: every other repo calls this from its own copilot-review.yml.
+# The pull_request trigger runs it on platform's own PRs.
+# One review per PR (never on later pushes) to save Copilot credits.
+on:
+  workflow_call:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions: {}
+
+jobs:
+  request:
+    name: Request Copilot review
+    if: >-
+      !github.event.pull_request.draft &&
+      github.event.pull_request.user.type != 'Bot' &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-copilot')
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Count non-Markdown files
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          code_files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename' | grep -cv '\.md$' || true)
+          echo "code_files=$code_files" >> "$GITHUB_OUTPUT"
+          echo "Non-Markdown files changed: $code_files"
+
+      - name: Request review from Copilot
+        if: steps.changes.outputs.code_files != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh api -X POST "repos/$REPO/pulls/$PR/requested_reviewers" \
+            -f 'reviewers[]=copilot-pull-request-reviewer[bot]' \
+            --jq '[.requested_reviewers[].login] | "Requested reviewers: \(join(", "))"'
