@@ -17,9 +17,9 @@ Every workflow here is `on: workflow_call`. The other repos call them instead of
 | `dotnet-ci.yml` | Format check, build, test | `contracts`, `sandbox`, `api` |
 | `node-ci.yml` | ESLint, Prettier, typecheck, test, build | `contracts`, `web` |
 | `proto-ci.yml` | `buf lint` / `buf breaking`, codegen, pack, publish | `contracts` |
-| `container-publish.yml` | buildx → GHCR, multi-arch, tagged with the commit SHA and version | `api`, `web`, lesson images |
+| `container-publish.yml` | buildx → GHCR, multi-arch, tagged with the commit SHA and version | `api`, `web`, scenario images |
 | `release-binary.yml` | `dotnet publish` for linux-x64 and linux-arm64 → GitHub Release | `sandbox` |
-| `vm-image.yml` | Builds the Proxmox VM template with Packer, with the pinned harness and lesson images. Runs on the **self-hosted runner** in an LXC on the Proxmox box, because GitHub-hosted runners can't reach Proxmox. | `sandbox` |
+| `vm-image.yml` | Builds the Proxmox VM template with Packer, with the pinned harness and scenario images. Runs on the **self-hosted runner** in an LXC on the Proxmox box, because GitHub-hosted runners can't reach Proxmox. | `sandbox` |
 | `pr-title.yml` | Fails a PR whose title isn't a Conventional Commit (max 72 characters, no trailing period) | every repo |
 | `copilot-review.yml` | Requests one Copilot review when a PR opens or is marked ready. Skips drafts, bots, Markdown-only PRs and the `skip-copilot` label. | every repo |
 
@@ -63,7 +63,7 @@ Three machines on one WireGuard mesh ([ADR 0001](https://github.com/kubernetes-l
 
 | Machine | Runs | Mesh address | Open to the internet |
 |---|---|---|---|
-| **Hetzner box** | Docker Compose: Caddy, `web`, `api`, Postgres | `10.66.0.1` | WireGuard (UDP 51820) and SSH only |
+| **Hetzner box** | Docker Compose: Caddy, `web`, `api`, Postgres, RabbitMQ | `10.66.0.1` | WireGuard (UDP 51820) and SSH only |
 | **Proxmox box** (home) | Proxmox VE, `envmgr` (systemd), sandbox VMs, the self-hosted runner (LXC) | `10.66.0.2` | Nothing; it dials out |
 | **Demo laptop** | The browser | `10.66.0.3` | Nothing; it dials out |
 
@@ -86,7 +86,7 @@ One folder per machine:
 
 | File | Purpose |
 |---|---|
-| `hetzner/docker-compose.yml` | `proxy` (Caddy), `web`, `api`, `postgres`, with image tags pinned through `.env`. Caddy is published only on the mesh address `10.66.0.1`. |
+| `hetzner/docker-compose.yml` | `proxy` (Caddy), `web`, `api`, `postgres`, `rabbitmq`, with image tags pinned through `.env`. Caddy and RabbitMQ are published only on the mesh address `10.66.0.1`, and RabbitMQ is firewalled to sandbox hosts. |
 | `hetzner/Caddyfile` | `tls internal`; `/` → web, `/api` and `/ws` → api. The demo laptop trusts Caddy's root CA once. |
 | `hetzner/install.sh` | Runs `docker compose up`, ordered after `wg-quick@wg0` so the mesh address exists when Docker binds to it |
 | `proxmox/envmgr.service` | systemd unit for `envmgr` on the Proxmox host. It needs no `/dev/kvm` or `/dev/net/tun`: Proxmox runs the VMs. |
@@ -97,7 +97,7 @@ One folder per machine:
 
 ## 🧪 dev/
 
-`docker-compose.dev.yml` runs Postgres and api against a **fake** (or Docker-provider) sandbox, so `api` and `web` can be developed on any laptop without KVM.
+`docker-compose.dev.yml` runs Postgres and api against a **fake** sandbox with no broker, so `api` and `web` can be developed on any laptop without KVM. Using the Docker-provider sandbox adds RabbitMQ.
 
 ## 📁 Layout
 

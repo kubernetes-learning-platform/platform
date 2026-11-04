@@ -12,8 +12,8 @@ This repo holds shared tooling for every kubernetes-learning-platform repo: reus
   - Every job has a `timeout-minutes`.
 - **Secrets.** Only `*.env.example` files are committed, never real env files, tokens, WireGuard private keys or OpenTofu state.
 - **Shell scripts.** `set -euo pipefail`, quoted variables, and the scripts should pass shellcheck.
-- **Deploy files.** Compose image tags are pinned through `.env`. Caddy routes `/` to web and `/api` and `/ws` to api, and is published only on the Hetzner box's mesh address (`10.66.0.1`). `envmgr` runs under systemd on the Proxmox host, not in Compose. Flag anything that exposes the stack on a public address.
-- **Network isolation.** Sandboxes on `vmbr1` may reach only `10.67.0.1:7071`, and envmgr's gRPC port accepts only `10.66.0.1`. Flag rule changes that widen either.
+- **Deploy files.** Compose image tags are pinned through `.env`. Caddy routes `/` to web and `/api` and `/ws` to api. Caddy and RabbitMQ are published only on the Hetzner box's mesh address (`10.66.0.1`). `envmgr` runs under systemd on the Proxmox host, not in Compose. Flag anything that exposes the stack on a public address.
+- **Network isolation.** Sandboxes on `vmbr1` may reach only `10.67.0.1:7071`, and envmgr's gRPC port accepts only `10.66.0.1`. RabbitMQ accepts only sandbox hosts. Flag rule changes that widen any of these.
 - **Infra code.** OpenTofu stays limited to long-lived infrastructure; sandboxes are created by envmgr, not here. The Proxmox token for envmgr stays scoped to the `kl-sandboxes` pool.
 - **Self-hosted runner.** Only `vm-image.yml` runs on it. Flag other workflows that target it.
 - **Lint configs.** A change in `lint/` changes the rules for every repo. Say which repos it affects.
