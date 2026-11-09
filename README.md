@@ -2,15 +2,43 @@
 
 > **Shared tooling for every repo:** reusable CI workflows, canonical lint configs, the team's conventions, the infrastructure code, and the files that deploy the demo machines.
 
-Part of [**kubernetes-learning-platform**](https://github.com/kubernetes-learning-platform/docs), an AI tutor with a live Kubernetes lab. Start at the [docs hub](https://github.com/kubernetes-learning-platform/docs) for the big picture.
+Part of [**kubernetes-learning-platform**](https://github.com/kubernetes-learning-platform/docs), a live Kubernetes lab with an optional AI helper. Start at the [docs hub](https://github.com/kubernetes-learning-platform/docs) for the big picture.
 
 **Owner:** Filip · **Status:** planned layout, scaffolding lands in M1. Nothing in here runs as a service.
 
 ---
 
+## 🧭 What this repo does
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/platform-dark.svg">
+  <img src="assets/platform-light.svg" width="100%" alt="Left to right: the contracts, sandbox, api and web repos call four reusable workflows in platform. proto-ci publishes to GitHub Packages, release-binary publishes envmgr and the harness to GitHub Releases, vm-image builds the VM template, and container-publish pushes the api and web images to GHCR. Releases and the template go to the Proxmox box, the images go to the Hetzner box, and both sit on a WireGuard mesh with the demo laptop.">
+</picture>
+
+`platform` holds everything the other repos share that isn't product code: how code gets checked, how it gets shipped, and how the machines are set up. Nothing in here runs as a service.
+
+| Folder | What it's for |
+|---|---|
+| `.github/workflows/` | CI that every repo calls, so no repo copies it |
+| `lint/` | One set of formatting and analysis rules for C#, TypeScript and Protobuf |
+| `infra/` | Code that creates the long-lived infrastructure: the cloud server, and the network and permissions on the Proxmox box |
+| `deploy/` | The files that put the software on each machine, and the WireGuard configs that connect them |
+| `dev/` | A Compose file that runs the stack on a laptop |
+
+### From a commit to a machine
+
+1. A PR in any repo runs a workflow from here. The repo's own CI file is about ten lines.
+2. A merge or a tag publishes what that repo ships: packages from `contracts`, binaries and the VM template from `sandbox`, container images from `api` and `web`.
+3. The deploy files install those on the machine that runs them: the Compose stack on the Hetzner box, `envmgr` and the VM template on the Proxmox box.
+4. The machines only talk to each other over a private WireGuard mesh. From the public internet, only WireGuard and SSH on the Hetzner box are reachable.
+
+**What exists today:** `pr-title.yml` and `copilot-review.yml`. Everything else below describes the planned layout.
+
+The whole system at a glance is in the [docs hub](https://github.com/kubernetes-learning-platform/docs#readme).
+
 ## ⚙️ Reusable workflows
 
-Every workflow here is `on: workflow_call`. The other repos call them instead of copying CI.
+Every workflow here is reusable (`on: workflow_call`). The other repos call them instead of copying CI. `pr-title.yml` and `copilot-review.yml` also run on this repo's own PRs.
 
 | Workflow | Does | Used by |
 |---|---|---|
