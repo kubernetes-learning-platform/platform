@@ -2,43 +2,41 @@
 
 > **Shared tooling for every repo:** reusable CI workflows, canonical lint configs, the team's conventions, the infrastructure code, and the files that deploy the demo machines.
 
-Part of [**kubernetes-learning-platform**](https://github.com/kubernetes-learning-platform/docs), a live Kubernetes lab with an optional AI helper. Start at the [docs hub](https://github.com/kubernetes-learning-platform/docs) for the big picture.
+Part of [kubernetes-learning-platform](https://github.com/kubernetes-learning-platform/docs), a live Kubernetes lab with an optional AI helper. The [docs repository](https://github.com/kubernetes-learning-platform/docs) describes the overall system.
 
 **Owner:** Filip · **Status:** planned layout, scaffolding lands in M1. Nothing in here runs as a service.
 
 ---
 
-## 🧭 What this repo does
+## Overview
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/platform-dark.svg">
   <img src="assets/platform-light.svg" width="100%" alt="Left to right: the contracts, sandbox, api and web repos call four reusable workflows in platform. proto-ci publishes to GitHub Packages, release-binary publishes envmgr and the harness to GitHub Releases, vm-image builds the VM template, and container-publish pushes the api and web images to GHCR. Releases and the template go to the Proxmox box, the images go to the Hetzner box, and both sit on a WireGuard mesh with the demo laptop.">
 </picture>
 
-`platform` holds everything the other repos share that isn't product code: how code gets checked, how it gets shipped, and how the machines are set up. Nothing in here runs as a service.
+`platform` contains what the other repositories share apart from product code: CI workflows, lint rules, infrastructure code and deployment files. Nothing in this repository runs as a service.
 
-| Folder | What it's for |
+| Folder | Purpose |
 |---|---|
-| `.github/workflows/` | CI that every repo calls, so no repo copies it |
-| `lint/` | One set of formatting and analysis rules for C#, TypeScript and Protobuf |
-| `infra/` | Code that creates the long-lived infrastructure: the cloud server, and the network and permissions on the Proxmox box |
-| `deploy/` | The files that put the software on each machine, and the WireGuard configs that connect them |
-| `dev/` | A Compose file that runs the stack on a laptop |
+| `.github/workflows/` | Reusable CI workflows called by every repository |
+| `lint/` | Shared formatting and analysis rules for C#, TypeScript and Protobuf |
+| `infra/` | OpenTofu code for long-lived infrastructure: the Hetzner server, and the network and permissions on the Proxmox box |
+| `deploy/` | Deployment files per machine, and the WireGuard configuration that connects the machines |
+| `dev/` | Docker Compose file for local development |
 
-### From a commit to a machine
+### Delivery path
 
-1. A PR in any repo runs a workflow from here. The repo's own CI file is about ten lines.
-2. A merge or a tag publishes what that repo ships: packages from `contracts`, binaries and the VM template from `sandbox`, container images from `api` and `web`.
-3. The deploy files install those on the machine that runs them: the Compose stack on the Hetzner box, `envmgr` and the VM template on the Proxmox box.
-4. The machines only talk to each other over a private WireGuard mesh. From the public internet, only WireGuard and SSH on the Hetzner box are reachable.
+1. A pull request in any repository runs a workflow from this repository. The calling CI file is about ten lines.
+2. A merge or a tag publishes that repository's outputs: packages from `contracts`, binaries and the VM template from `sandbox`, container images from `api` and `web`.
+3. The deployment files install those outputs on the target machine: the Compose stack on the Hetzner box, `envmgr` and the VM template on the Proxmox box.
+4. The machines communicate only over a private WireGuard mesh. Only WireGuard and SSH on the Hetzner box are reachable from the internet.
 
-**What exists today:** `pr-title.yml` and `copilot-review.yml`. Everything else below describes the planned layout.
+Currently implemented: `pr-title.yml` and `copilot-review.yml`. The remaining sections describe the planned layout.
 
-The whole system at a glance is in the [docs hub](https://github.com/kubernetes-learning-platform/docs#readme).
+## Reusable workflows
 
-## ⚙️ Reusable workflows
-
-Every workflow here is reusable (`on: workflow_call`). The other repos call them instead of copying CI. `pr-title.yml` and `copilot-review.yml` also run on this repo's own PRs.
+Every workflow here is reusable (`on: workflow_call`). The other repositories call them instead of copying CI. `pr-title.yml` and `copilot-review.yml` also run on this repo's own PRs.
 
 | Workflow | Does | Used by |
 |---|---|---|
@@ -51,7 +49,7 @@ Every workflow here is reusable (`on: workflow_call`). The other repos call them
 | `pr-title.yml` | Fails a PR whose title isn't a Conventional Commit (max 72 characters, no trailing period) | every repo |
 | `copilot-review.yml` | Requests one Copilot review when a PR opens or is marked ready. Skips drafts, bots, Markdown-only PRs and the `skip-copilot` label. | every repo |
 
-A repo's whole CI file is about this long:
+A consuming repository's CI file:
 
 ```yaml
 name: ci
@@ -66,7 +64,7 @@ jobs:
     secrets: inherit
 ```
 
-## 🧹 Lint configs
+## Lint configs
 
 The canonical copies live in `lint/`. `sync.sh` copies them into a repo, and the reusable CI fails if a repo's copy drifts.
 
@@ -76,7 +74,7 @@ The canonical copies live in `lint/`. `sync.sh` copies them into a repo, and the
 | TypeScript | ESLint flat config, Prettier, `tsc --noEmit` |
 | Protobuf | `buf lint` |
 
-## 📏 Conventions
+## Conventions
 
 - **Conventional Commits, strictly:** `feat: short description`. One line, no body, no co-author trailers.
 - **PR titles** use the same format, at most 72 characters, no trailing period. PRs are squash-merged and the squash commit is the PR title, so `main` reads as one clean line per change. The `pr-title` check fails any PR whose title breaks this.
@@ -85,7 +83,7 @@ The canonical copies live in `lint/`. `sync.sh` copies them into a repo, and the
 - **Branches for an issue:** use the issue's **Create a branch** button and replace GitHub's suggested name (`12-add-warm-pool`) with one that follows the convention. The branch and its PR stay linked to the issue. From the CLI: `gh issue develop 12 --name feat/warm-pool --checkout`.
 - Types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`, `style`.
 
-## 🕸️ Machines
+## Machines
 
 Three machines on one WireGuard mesh ([ADR 0001](https://github.com/kubernetes-learning-platform/docs/blob/main/adr/0001-hosting-and-harness-transport.md)). Nothing is public.
 
@@ -97,7 +95,7 @@ Three machines on one WireGuard mesh ([ADR 0001](https://github.com/kubernetes-l
 
 The Hetzner box is the only peer with a public endpoint, so neither the home network nor the demo venue needs port forwarding. More peers (teammates, a graders' laptop) get their own address in `10.66.0.0/24`.
 
-## 🏗️ infra/
+## infra/
 
 OpenTofu for everything long-lived. Run it from a machine on the mesh. State is never committed in plain text.
 
@@ -108,7 +106,7 @@ OpenTofu for everything long-lived. Run it from a machine on the mesh. State is 
 
 The Proxmox VM template is built by Packer from `sandbox/images/base/` (through `vm-image.yml`), not from here. **Sandboxes are not IaC:** `envmgr` creates and deletes them with its own reconcile loop, because a state file per session and a plan/apply cycle on every create would be slow and go stale whenever a VM is deleted outside the tool.
 
-## 🚀 deploy/
+## deploy/
 
 One folder per machine:
 
@@ -123,11 +121,11 @@ One folder per machine:
 | `wireguard/` | Peer config templates for the Hetzner box, the Proxmox box and the demo laptop. Private keys are never committed. |
 | `*.env.example` | Config templates (`hetzner/api.env.example`, `proxmox/envmgr.env.example`). The real `.env` files are never committed. |
 
-## 🧪 dev/
+## dev/
 
 `docker-compose.dev.yml` runs Postgres and api against a **fake** sandbox with no broker, so `api` and `web` can be developed on any laptop without KVM. Using the Docker-provider sandbox adds RabbitMQ.
 
-## 📁 Layout
+## Layout
 
 ```
 platform/
@@ -138,12 +136,12 @@ platform/
 └── dev/                   # local dev compose
 ```
 
-## 📚 More
+## Further reading
 
 - [ARCHITECTURE §8 CI/CD & shared tooling](https://github.com/kubernetes-learning-platform/docs/blob/main/ARCHITECTURE.md#8-cicd--shared-tooling-filip)
 - [ARCHITECTURE §3 Runtime architecture](https://github.com/kubernetes-learning-platform/docs/blob/main/ARCHITECTURE.md#3-runtime-architecture) (machines, mesh and sandbox network)
 - [ADR 0001](https://github.com/kubernetes-learning-platform/docs/blob/main/adr/0001-hosting-and-harness-transport.md): why the stack and the sandboxes are on different machines
 
-## 📄 License
+## License
 
 [MIT](LICENSE)
