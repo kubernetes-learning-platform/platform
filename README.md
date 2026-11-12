@@ -41,7 +41,7 @@ Every workflow here is reusable (`on: workflow_call`). The other repositories ca
 | Workflow | Does | Used by |
 |---|---|---|
 | `dotnet-ci.yml` | Format check, build, test | `contracts`, `sandbox`, `api` |
-| `node-ci.yml` | ESLint, Prettier, typecheck, test, build | `contracts`, `web` |
+| `node-ci.yml` | `biome ci` (lint + format check), typecheck, test, build | `contracts`, `web` |
 | `proto-ci.yml` | `buf lint` / `buf breaking`, codegen, pack, publish | `contracts` |
 | `container-publish.yml` | buildx → GHCR, multi-arch, tagged with the commit SHA and version | `api`, `web`, scenario images |
 | `release-binary.yml` | `dotnet publish` for linux-x64 and linux-arm64 → GitHub Release | `sandbox` |
@@ -71,7 +71,7 @@ The canonical copies live in `lint/`. `sync.sh` copies them into a repo, and the
 | Language | Rules |
 |---|---|
 | C# | `.editorconfig`, `dotnet format --verify-no-changes`, `TreatWarningsAsErrors`, `AnalysisLevel=latest-recommended` |
-| TypeScript | ESLint flat config, Prettier, `tsc --noEmit` |
+| TypeScript | Biome for linting and formatting (`biome.json`, checked with `biome ci`), `tsc --noEmit` |
 | Protobuf | `buf lint` |
 
 ## Conventions
@@ -130,7 +130,7 @@ One folder per machine:
 ```
 platform/
 ├── .github/workflows/     # the reusable workflows above
-├── lint/                  # .editorconfig, Directory.Build.props, eslint + prettier configs, sync.sh
+├── lint/                  # .editorconfig, Directory.Build.props, biome.json, sync.sh
 ├── infra/                 # OpenTofu: hetzner/, proxmox/
 ├── deploy/                # hetzner/ (compose, Caddyfile), proxmox/ (envmgr unit, nftables), wireguard/
 └── dev/                   # local dev compose
