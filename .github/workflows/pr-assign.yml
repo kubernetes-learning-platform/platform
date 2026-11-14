@@ -1,0 +1,28 @@
+name: pr-assign
+
+# Assigns each PR to the person who opened it, skipping bots and forks.
+on:
+  workflow_call:
+  pull_request:
+    types: [opened, reopened]
+
+permissions: {}
+
+jobs:
+  assign:
+    name: Assign the author
+    if: >-
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Assign the PR to its author
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: gh pr edit "$PR" --repo "$REPO" --add-assignee "$AUTHOR"
