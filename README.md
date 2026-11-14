@@ -83,6 +83,7 @@ The canonical copies live in `lint/`. `sync.sh` copies them into a repo, and the
 - **Branches for an issue:** every issue names its branch in a `Branch:` line. Create it with `gh issue develop 12 --name feat/warm-pool --checkout`, or with the issue's **Create a branch** button and that name instead of GitHub's suggestion (`12-add-warm-pool`). The branch and its PR stay linked to the issue.
 - **Where changes land:** while the repos are still empty, documentation is committed straight to `main`. From the setup issues on, every change goes through a PR.
 - Types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`, `style`.
+- **AI agents:** every repo has an `AGENTS.md` that explains the repo and these rules, and a `CLAUDE.md` symlinked to it. Agents ask before creating a branch or committing. The commit, branch and PR rules are identical in all six; change them everywhere at once.
 
 ## The course VM
 
