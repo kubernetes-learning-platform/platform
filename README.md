@@ -31,7 +31,7 @@ Part of [kubernetes-learning-platform](https://github.com/kubernetes-learning-pl
 3. A manual deploy from a private deploy repo puts a chosen version of the stack on the course VM. `envmgr` and the sandbox template are installed on the same VM.
 4. The VM is reached only over Tailscale. No port is open to the internet.
 
-Currently implemented: `pr-title.yml` and `copilot-review.yml`. The remaining sections describe the planned layout.
+Currently implemented: `pr-title.yml`, `copilot-review.yml` and `pr-assign.yml`. The remaining sections describe the planned layout.
 
 ## Reusable workflows
 
@@ -42,11 +42,12 @@ Every workflow here is reusable (`on: workflow_call`). The other repositories ca
 | `dotnet-ci.yml` | Format check, build, test | `contracts`, `sandbox`, `api` |
 | `node-ci.yml` | `biome ci` (lint + format check), typecheck, test, build | `contracts`, `web` |
 | `proto-ci.yml` | `buf lint` / `buf breaking`, codegen, pack. On `main`, publishes a release when the schema changed, with the version taken from the commit type, then notifies the consumers. | `contracts` |
-| `contracts-bump.yml` | Sets a new `contracts` version, builds and tests, then pushes `build(deps): bump contracts to X.Y.Z` to `main`. If the build fails, it opens a PR for the repo's owner instead. | `sandbox`, `api`, `web` |
+| `contracts-bump.yml` | Sets a new `contracts` version, builds and tests, then pushes `build(deps): bump contracts to X.Y.Z` to `main` with the GitHub App's token, which is on each repo's ruleset bypass list. If the build fails, it opens a PR for the repo's owner instead. | `sandbox`, `api`, `web` |
 | `container-publish.yml` | buildx → GHCR, multi-arch, tagged with the commit SHA, and with the version on a tag. A merge to `main` publishes an image. | `api`, `web`, scenario images |
 | `release-binary.yml` | `dotnet publish` for linux-x64 and linux-arm64 → GitHub Release | `sandbox` |
-| `sandbox-template.yml` | Builds the qcow2 sandbox template with Packer, with the pinned harness and scenario images. Runs on the **self-hosted runner** on the course VM, because it needs KVM. | `sandbox` |
+| `sandbox-template.yml` | Builds the qcow2 sandbox template with Packer, with the pinned harness and scenario images. Runs on the **self-hosted runner** on the course VM, because it needs KVM. Public repos can't use that runner, so it is started from the private deploy repo. | deploy repo |
 | `pr-title.yml` | Fails a PR whose title isn't a Conventional Commit (max 72 characters, no trailing period) | every repo |
+| `pr-assign.yml` | Assigns each PR to the person who opened it. Skips forks and bots. | every repo |
 | `copilot-review.yml` | Requests one Copilot review when a PR opens or is marked ready. Skips drafts, bots, Markdown-only PRs and the `skip-copilot` label. | every repo |
 
 A consuming repository's CI file:
@@ -81,6 +82,7 @@ The canonical copies live in `lint/`. `sync.sh` copies them into a repo, and the
 - **Copilot review:** `copilot-review` asks Copilot for one review when a PR opens or is marked ready. It skips drafts, bots, Markdown-only PRs and PRs labelled `skip-copilot`. It needs Copilot on your own account, which is free through GitHub Student.
 - **Branches** are `type/anything`, e.g. `feat/warm-pool`, `fix/harness-reconnect`, `ci/pr-title-check`. Same types as commits, no issue number, not checked by CI. Short-lived, cut from `main`, deleted after merge.
 - **Branches for an issue:** every issue names its branch in a `Branch:` line. Create it with `gh issue develop 12 --name feat/warm-pool --checkout`, or with the issue's **Create a branch** button and that name instead of GitHub's suggestion (`12-add-warm-pool`). The branch and its PR stay linked to the issue.
+- **Reviews:** `main` is protected by a ruleset in every repo: no force-push or deletion, PRs only, squash merges, the `pr-title` check must pass, and one approval from someone other than the author. `.github/CODEOWNERS` requests Filip's review on every PR, and `pr-assign` assigns the author. Repo admins can bypass the ruleset.
 - **Where changes land:** while the repos are still empty, documentation is committed straight to `main`. From the setup issues on, every change goes through a PR.
 - Types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`, `style`.
 - **AI agents:** every repo has an `AGENTS.md` that explains the repo and these rules, and a `CLAUDE.md` symlinked to it. Agents ask before creating a branch or committing. The commit, branch and PR rules are identical in all six; change them everywhere at once.

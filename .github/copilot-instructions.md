@@ -15,8 +15,8 @@ This repo holds shared tooling for every kubernetes-learning-platform repo: reus
 - **Deploy files.** Image tags are pinned, never `latest`. Caddy routes `/` to web and `/api` and `/ws` to api, and listens only on the VM's Tailscale address, with its certificate from DNS-01. `envmgr` runs under systemd on the host, not in the stack. The deploy format (Compose or Helm on k3s) is OPEN, so flag a change that commits to one without an ADR. Flag anything that exposes the stack on a public address.
 - **Network isolation.** Sandboxes on the isolated libvirt network may reach only `10.67.0.1:7071`, and envmgr's gRPC port accepts only the stack. Sandboxes can't reach RabbitMQ. The tailnet ACL allows only SSH and the app's HTTPS port. Flag rule changes that widen any of these.
 - **No infrastructure code.** The course VM is set up by `deploy/vm/install.sh`; sandboxes are created by envmgr, not here.
-- **Self-hosted runner.** Only the deploy workflow and `sandbox-template.yml` run on it. Flag other workflows that target it.
-- **Contracts bumps.** `contracts-bump.yml` may push to a repo's `main` only after the build and tests pass; otherwise it opens a PR. Flag changes that let it push without a passing build, or that give it more than `contents: write` on its own repo.
+- **Self-hosted runner.** Only the deploy workflow and `sandbox-template.yml` run on it, started from the private deploy repo. The repos are public and the runner group blocks public repos. Flag other workflows that target it.
+- **Contracts bumps.** `contracts-bump.yml` pushes to a repo's `main` with the GitHub App's token only after the build and tests pass; otherwise it opens a PR. Flag changes that let it push without a passing build. `pr-assign.yml` must stay on `pull_request` and never check out PR code.
 - **Lint configs.** A change in `lint/` changes the rules for every repo. Say which repos it affects.
 
 ## Conventions this repo enforces
