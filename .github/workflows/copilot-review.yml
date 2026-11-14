@@ -1,12 +1,6 @@
 name: copilot-review
 
-# Reusable: every other repo calls this from its own copilot-review.yml.
-# The pull_request trigger runs it on platform's own PRs.
-# One review per PR (never on later pushes) to save Copilot credits.
-#
-# A reusable workflow can't raise its caller's permissions, so callers grant:
-#   permissions:
-#     pull-requests: write
+# Requests one Copilot review per PR, skipping drafts, bots, forks, Markdown-only PRs and the skip-copilot label.
 on:
   workflow_call:
   pull_request:
@@ -17,7 +11,6 @@ permissions: {}
 jobs:
   request:
     name: Request Copilot review
-    # Fork PRs get a read-only token, so they're skipped
     if: >-
       !github.event.pull_request.draft &&
       github.event.pull_request.user.type != 'Bot' &&
@@ -35,7 +28,6 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          # API errors fail the step instead of silently skipping the review
           code_files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate \
             --jq '[.[] | select(.filename | endswith(".md") | not)] | length' | awk '{n += $1} END {print n + 0}')
           reviews=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \

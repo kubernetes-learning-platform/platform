@@ -1,7 +1,6 @@
 name: pr-title
 
-# Reusable: every other repo calls this from its own pr-title.yml.
-# The pull_request trigger runs it on platform's own PRs.
+# Fails a PR whose title isn't a Conventional Commit of at most 72 characters.
 on:
   workflow_call:
   pull_request:
