@@ -1,6 +1,6 @@
 # Copilot instructions: platform
 
-This repo holds shared tooling for every kubernetes-learning-platform repo: reusable GitHub Actions workflows, canonical lint configs, the infrastructure code (OpenTofu), the per-machine deploy files (Hetzner box, Proxmox box, WireGuard mesh) and the local dev Compose. Nothing here runs as a service. Changes here affect **every** repo. The full design is in the `docs` repo (ARCHITECTURE.md §8).
+This repo holds shared tooling for every kubernetes-learning-platform repo: reusable GitHub Actions workflows, canonical lint configs, the install script and deploy files for the course VM, and the local dev Compose. Nothing here runs as a service. Changes here affect **every** repo. The full design is in the `docs` repo (ARCHITECTURE.md §8).
 
 ## When reviewing, focus on
 - **Blast radius.** Call out any change to a reusable workflow's inputs, outputs or behaviour that would break the repos calling it at `@main`.
@@ -10,18 +10,19 @@ This repo holds shared tooling for every kubernetes-learning-platform repo: reus
   - Never interpolate `${{ github.event.* }}` or other untrusted input directly into `run:`. Pass it through `env:`.
   - Pin third-party actions to a full commit SHA.
   - Every job has a `timeout-minutes`.
-- **Secrets.** Only `*.env.example` files are committed, never real env files, tokens, WireGuard private keys or OpenTofu state.
+- **Secrets.** Only `*.env.example` files are committed, never real env files, tokens, Tailscale auth keys or the Cloudflare token.
 - **Shell scripts.** `set -euo pipefail`, quoted variables, and the scripts should pass shellcheck.
-- **Deploy files.** Compose image tags are pinned through `.env`. Caddy routes `/` to web and `/api` and `/ws` to api. Caddy and RabbitMQ are published only on the Hetzner box's mesh address (`10.66.0.1`). `envmgr` runs under systemd on the Proxmox host, not in Compose. Flag anything that exposes the stack on a public address.
-- **Network isolation.** Sandboxes on `vmbr1` may reach only `10.67.0.1:7071`, and envmgr's gRPC port accepts only `10.66.0.1`. RabbitMQ accepts only sandbox hosts. Flag rule changes that widen any of these.
-- **Infra code.** OpenTofu stays limited to long-lived infrastructure; sandboxes are created by envmgr, not here. The Proxmox token for envmgr stays scoped to the `kl-sandboxes` pool.
-- **Self-hosted runner.** Only `vm-image.yml` runs on it. Flag other workflows that target it.
+- **Deploy files.** Image tags are pinned, never `latest`. Caddy routes `/` to web and `/api` and `/ws` to api, and listens only on the VM's Tailscale address, with its certificate from DNS-01. `envmgr` runs under systemd on the host, not in the stack. The deploy format (Compose or Helm on k3s) is OPEN, so flag a change that commits to one without an ADR. Flag anything that exposes the stack on a public address.
+- **Network isolation.** Sandboxes on the isolated libvirt network may reach only `10.67.0.1:7071`, and envmgr's gRPC port accepts only the stack. Sandboxes can't reach RabbitMQ. The tailnet ACL allows only SSH and the app's HTTPS port. Flag rule changes that widen any of these.
+- **No infrastructure code.** The course VM is set up by `deploy/vm/install.sh`; sandboxes are created by envmgr, not here.
+- **Self-hosted runner.** Only the deploy workflow and `sandbox-template.yml` run on it. Flag other workflows that target it.
+- **Contracts bumps.** `contracts-bump.yml` may push to a repo's `main` only after the build and tests pass; otherwise it opens a PR. Flag changes that let it push without a passing build, or that give it more than `contents: write` on its own repo.
 - **Lint configs.** A change in `lint/` changes the rules for every repo. Say which repos it affects.
 
 ## Conventions this repo enforces
 - PR titles are Conventional Commits (`feat: short description`), one line, at most 72 characters, no trailing period. `pr-title.yml` checks this for every repo.
 - `copilot-review.yml` requests one Copilot review per PR, because reviews cost AI credits. Flag changes that make it run more often: triggering on `synchronize`, or dropping a skip (drafts, bots, forks, Markdown-only PRs, the `skip-copilot` label, already reviewed).
-- Branches are `type/anything`, e.g. `feat/warm-pool`.
+- Branches are `type/anything`, e.g. `feat/warm-pool`, taken from the issue's `Branch:` line.
 - Files are UTF-8 with LF line endings.
 
 ## Don't
