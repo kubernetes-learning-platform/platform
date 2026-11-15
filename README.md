@@ -87,7 +87,7 @@ lint/sync.sh --dotnet --node ../contracts
 | `web` | `--node` |
 | `docs`, `platform` | none |
 
-`sync.sh` also writes `.lint-sync` in the repo: the `platform` commit the copies came from, and the flags. A later run without flags reuses them. The file is rewritten only when a copy or the flags change, and `platform` itself has none.
+`sync.sh` also writes `.lint-sync` in the repo: the `platform` commit the copies came from, and the flags. A later run without flags reuses them. The file is rewritten only when a copy or the flags change, and `platform` itself has none. `sync.sh` refuses to run from uncommitted changes in `lint/`, because `.lint-sync` must name a commit that holds the copied files, and it won't write through a symlink.
 
 After a change to `lint/` merges, the update bot (platform#31) runs `lint-sync.yml` in each repo with lint copies. It syncs, builds and tests, then pushes `chore: sync lint configs` to `main`, or opens a PR for the repo's owner if the build fails. Only the first sync, while scaffolding a repo, is done by hand.
 
