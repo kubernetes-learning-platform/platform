@@ -31,7 +31,7 @@ Part of [kubernetes-learning-platform](https://github.com/kubernetes-learning-pl
 3. A manual deploy from a private deploy repo puts a chosen version of the stack on the course VM. `envmgr` and the sandbox template are installed on the same VM.
 4. The VM is reached only over Tailscale. No port is open to the internet.
 
-Currently implemented: `pr-title.yml`, `copilot-review.yml` and `pr-assign.yml`. The remaining sections describe the planned layout.
+Currently implemented: `pr-title.yml`, `copilot-review.yml`, `pr-assign.yml` and `lint/`. The remaining sections describe the planned layout.
 
 ## Reusable workflows
 
@@ -43,6 +43,7 @@ Every workflow here is reusable (`on: workflow_call`). The other repositories ca
 | `node-ci.yml` | `biome ci` (lint + format check), typecheck, test, build | `contracts`, `web` |
 | `proto-ci.yml` | `buf lint` / `buf breaking`, codegen, pack. On `main`, publishes a release when the schema changed, with the version taken from the commit type, then notifies the consumers. | `contracts` |
 | `contracts-bump.yml` | Sets a new `contracts` version, builds and tests, then pushes `build(deps): bump contracts to X.Y.Z` to `main` with the GitHub App's token, which is on each repo's ruleset bypass list. If the build fails, it opens a PR for the repo's owner instead. | `sandbox`, `api`, `web` |
+| `lint-sync.yml` | Runs `lint/sync.sh` at the `platform` commit sent after a change to `lint/`, with the flags in the repo's `.lint-sync`, builds and tests, then pushes `chore: sync lint configs` to `main` with the GitHub App's token. If the build fails, it opens a PR instead. It pushes nothing when no copy changed. | `contracts`, `sandbox`, `api`, `web`, `docs` |
 | `container-publish.yml` | buildx → GHCR, multi-arch, tagged with the commit SHA, and with the version on a tag. A merge to `main` publishes an image. | `api`, `web`, scenario images |
 | `release-binary.yml` | `dotnet publish` for linux-x64 and linux-arm64 → GitHub Release | `sandbox` |
 | `sandbox-template.yml` | Builds the qcow2 sandbox template with Packer, with the pinned harness and scenario images. Runs on the **self-hosted runner** on the course VM, because it needs KVM. Public repos can't use that runner, so it is started from the private deploy repo. | deploy repo |
@@ -67,13 +68,38 @@ jobs:
 
 ## Lint configs
 
-The canonical copies live in `lint/`. `sync.sh` copies them into a repo, and the reusable CI fails if a repo's copy drifts.
+The canonical copies live in `lint/`. Every repo commits its own copy at its root, made with `lint/sync.sh` from a `platform` checkout:
 
-| Language | Rules |
+```bash
+lint/sync.sh --dotnet --node ../contracts
+```
+
+| File | Copied | Sets |
+|---|---|---|
+| `.editorconfig` | always | UTF-8, LF, final newline, 4-space indent (2 for web, config and Markdown files), and the C# style and naming rules |
+| `Directory.Build.props` | with `--dotnet` | `TreatWarningsAsErrors`, `AnalysisLevel=latest-recommended`, `EnforceCodeStyleInBuild`, nullable reference types, the latest C# version, and XML docs, which the unused-usings rule needs to run on build |
+| `biome.json` | with `--node` | Biome's recommended lint rules, formatting for TypeScript, JavaScript, JSON and CSS (2 spaces, 100 columns), import sorting and Tailwind directives. Biome adds the Next.js and React rules when `package.json` lists them, and skips files in `.gitignore`. |
+
+| Repo | Flags |
 |---|---|
-| C# | `.editorconfig`, `dotnet format --verify-no-changes`, `TreatWarningsAsErrors`, `AnalysisLevel=latest-recommended` |
-| TypeScript | Biome for linting and formatting (`biome.json`, checked with `biome ci`), `tsc --noEmit` |
+| `contracts` | `--dotnet --node` |
+| `sandbox`, `api` | `--dotnet` |
+| `web` | `--node` |
+| `docs`, `platform` | none |
+
+`sync.sh` also writes `.lint-sync` in the repo: the `platform` commit the copies came from, and the flags. A later run without flags reuses them. The file is rewritten only when a copy or the flags change, and `platform` itself has none.
+
+After a change to `lint/` merges, the update bot (platform#31) runs `lint-sync.yml` in each repo with lint copies. It syncs, builds and tests, then pushes `chore: sync lint configs` to `main`, or opens a PR for the repo's owner if the build fails. Only the first sync, while scaffolding a repo, is done by hand.
+
+`--check` changes nothing: it prints a diff for each copy that differs and exits 1. The reusable CI will check out `platform` at the commit in `.lint-sync` and run it (platform#4), so a hand edit fails, but a newer change in `platform` doesn't block a repo while its sync is pending. Don't edit the copies in a repo. Settings for one repo go in its project files, in a nested `Directory.Build.props` that imports the root one, or in a nested `biome.json` with `"extends": "//"`.
+
+| Language | Checked with |
+|---|---|
+| C# | `dotnet format --verify-no-changes` and the build. Most style rules fail both; `this.` and `Int32` for `int` (IDE0003, IDE0049) fail only `dotnet format`. Underscores in names (CA1707) are allowed under `tests/`, for test names like `Method_Condition_Result`. |
+| TypeScript | `biome ci` and `tsc --noEmit`. Repos pin `@biomejs/biome` to the version in `biome.json`'s `$schema` (2.6.4). |
 | Protobuf | `buf lint` |
+
+Projects fresh from `dotnet new` don't pass as generated. Run `dotnet format` once, because the templates ship CRLF line endings and a byte order mark, then seal the template's types (CA1852) and add their access modifiers (IDE0040).
 
 ## Conventions
 
