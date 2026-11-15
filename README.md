@@ -111,7 +111,7 @@ Projects fresh from `dotnet new` don't pass as generated. Run `dotnet format` on
 - **Branches** are `type/anything`, e.g. `feat/warm-pool`, `fix/harness-reconnect`, `ci/pr-title-check`. Same types as commits, no issue number, not checked by CI. Short-lived, cut from `main`, deleted after merge.
 - **Branches for an issue:** every issue names its branch in a `Branch:` line. Create it with `gh issue develop 12 --name feat/warm-pool --checkout`, or with the issue's **Create a branch** button and that name instead of GitHub's suggestion (`12-add-warm-pool`). The branch and its PR stay linked to the issue.
 - **Reviews:** `main` is protected by a ruleset in every repo: no force-push or deletion, PRs only, squash merges, the `pr-title` check must pass on a branch that is up to date with `main`, and one approval from someone other than the author. `.github/CODEOWNERS` requests Filip's review on every PR, and `pr-assign` assigns the author. Repo admins can bypass the ruleset.
-- **Where changes land:** while the repos are still empty, documentation is committed straight to `main`. From the setup issues on, every change goes through a PR.
+- **Where changes land:** in the code repos, every change goes through a PR, and its README and doc updates go in the same PR as the feature they describe. The `docs` repo is only documentation, so it commits straight to `main`.
 - Types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`, `style`.
 - **AI agents:** every repo has an `AGENTS.md` that explains the repo and these rules, and a `CLAUDE.md` symlinked to it. Agents ask before creating a branch or committing. The commit, branch and PR rules are identical in all six; change them everywhere at once.
 
