@@ -76,8 +76,14 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           TITLE: ${{ github.event.pull_request.title }}
         run: |
-          if buf breaking --against ".git#ref=$BASE_SHA"; then
+          status=0
+          buf breaking --against ".git#ref=$BASE_SHA" || status=$?
+          if [[ "$status" -eq 0 ]]; then
             exit 0
+          fi
+          if [[ "$status" -ne 100 ]]; then
+            echo "::error title=buf breaking failed::buf breaking exited with $status before it could compare the schema."
+            exit "$status"
           fi
           pattern='^[a-z]+(\([a-z0-9-]+\))?!:'
           if [[ "$TITLE" =~ $pattern ]]; then
