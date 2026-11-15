@@ -1,0 +1,137 @@
+name: proto-ci
+
+# Checks contracts: its lint copies, buf lint, format and breaking, codegen, and both packages.
+on:
+  workflow_call:
+    inputs:
+      buf-version:
+        description: The buf CLI version to install.
+        type: string
+        default: 1.75.0
+      dotnet-version:
+        description: The .NET SDK version to install.
+        type: string
+        default: 10.0.x
+      node-version:
+        description: The Node.js version to install.
+        type: string
+        default: "24"
+      dotnet-project:
+        description: The folder of the .NET package project.
+        type: string
+        default: dotnet/KubernetesLearning.Contracts
+      ts-directory:
+        description: The folder of the TypeScript package.
+        type: string
+        default: ts
+
+permissions: {}
+
+jobs:
+  check:
+    name: Protobuf checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the lint copies against platform
+        env:
+          PLATFORM: ${{ runner.temp }}/platform
+        run: |
+          commit="$(sed -n 's/^commit=//p' .lint-sync 2>/dev/null || true)"
+          if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error file=.lint-sync::No valid commit in .lint-sync. Run lint/sync.sh --dotnet --node from platform to create it."
+            exit 1
+          fi
+          git init -q "$PLATFORM"
+          git -C "$PLATFORM" fetch -q --depth 1 https://github.com/kubernetes-learning-platform/platform.git "$commit"
+          git -C "$PLATFORM" checkout -q FETCH_HEAD
+          "$PLATFORM/lint/sync.sh" --check --dotnet --node .
+
+      - name: Install buf
+        uses: bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6
+        with:
+          version: ${{ inputs.buf-version }}
+          setup_only: true
+
+      - name: Lint the schema
+        run: buf lint
+
+      - name: Check schema formatting
+        run: buf format --diff --exit-code
+
+      - name: Check for breaking changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          status=0
+          buf breaking --against ".git#ref=$BASE_SHA" || status=$?
+          if [[ "$status" -eq 0 ]]; then
+            exit 0
+          fi
+          if [[ "$status" -ne 100 ]]; then
+            echo "::error title=buf breaking failed::buf breaking exited with $status before it could compare the schema."
+            exit "$status"
+          fi
+          pattern='^[a-z]+(\([a-z0-9-]+\))?!:'
+          if [[ "$TITLE" =~ $pattern ]]; then
+            echo "::warning title=Breaking change::buf breaking found a break, and the PR title marks it with !."
+            exit 0
+          fi
+          echo "::error title=Unmarked breaking change::buf breaking found a break. If it is intended, mark the PR title with !, as in \"feat!: rename sandbox status\"."
+          exit 1
+
+      - name: Install Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.ts-directory }}/package-lock.json
+
+      - name: Install the TypeScript package's dependencies
+        working-directory: ${{ inputs.ts-directory }}
+        run: npm ci
+
+      - name: Generate code
+        run: buf generate
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Restore the .NET package
+        working-directory: ${{ inputs.dotnet-project }}
+        run: dotnet restore
+
+      - name: Check .NET formatting
+        working-directory: ${{ inputs.dotnet-project }}
+        run: dotnet format --verify-no-changes --no-restore
+
+      - name: Build the .NET package
+        working-directory: ${{ inputs.dotnet-project }}
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Lint the TypeScript package and check its formatting
+        working-directory: ${{ inputs.ts-directory }}
+        run: npm exec --no -- biome ci .
+
+      - name: Build the TypeScript package
+        working-directory: ${{ inputs.ts-directory }}
+        run: npm run build
+
+      - name: Check the TypeScript package's types
+        working-directory: ${{ inputs.ts-directory }}
+        run: npm exec --no -- tsc --noEmit

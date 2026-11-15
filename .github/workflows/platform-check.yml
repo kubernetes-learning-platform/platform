@@ -1,0 +1,41 @@
+name: platform-check
+
+# Checks platform's own PRs: actionlint on the workflows, shellcheck on the scripts, and the root .editorconfig.
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  check:
+    name: Platform checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint
+        env:
+          VERSION: 1.7.12
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl -fsSL -o "$archive" "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_linux_amd64.tar.gz"
+          echo "$SHA256  $archive" | sha256sum --check --quiet
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -version
+
+      - name: Lint the workflows
+        run: |
+          "$RUNNER_TEMP/actionlint"
+
+      - name: Check the scripts
+        run: git ls-files -z '*.sh' | xargs -0 --no-run-if-empty shellcheck
+
+      - name: Check the root .editorconfig against lint/
+        run: lint/sync.sh --check .

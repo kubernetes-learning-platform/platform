@@ -31,40 +31,59 @@ Part of [kubernetes-learning-platform](https://github.com/kubernetes-learning-pl
 3. A manual deploy from a private deploy repo puts a chosen version of the stack on the course VM. `envmgr` and the sandbox template are installed on the same VM.
 4. The VM is reached only over Tailscale. No port is open to the internet.
 
-Currently implemented: `pr-title.yml`, `copilot-review.yml`, `pr-assign.yml` and `lint/`. The remaining sections describe the planned layout.
+Currently implemented: `pr-title.yml`, `copilot-review.yml`, `pr-assign.yml`, `dotnet-ci.yml`, `node-ci.yml`, `proto-ci.yml`, `platform-check.yml` and `lint/`. The remaining sections describe the planned layout.
 
 ## Reusable workflows
 
-Every workflow here is reusable (`on: workflow_call`). The other repositories call them instead of copying CI. `pr-title.yml` and `copilot-review.yml` also run on this repo's own PRs.
+The workflows here are reusable (`on: workflow_call`), so the other repositories call them instead of copying CI. `pr-title.yml`, `pr-assign.yml` and `copilot-review.yml` also run on this repo's own PRs, and `platform-check.yml` runs only here.
 
 | Workflow | Does | Used by |
 |---|---|---|
-| `dotnet-ci.yml` | Format check, build, test | `contracts`, `sandbox`, `api` |
-| `node-ci.yml` | `biome ci` (lint + format check), typecheck, test, build | `contracts`, `web` |
-| `proto-ci.yml` | `buf lint` / `buf breaking`, codegen, pack. On `main`, publishes a release when the schema changed, with the version taken from the commit type, then notifies the consumers. | `contracts` |
+| `dotnet-ci.yml` | Lint copies, `dotnet format --verify-no-changes`, Release build | `sandbox`, `api` |
+| `node-ci.yml` | Lint copies, `npm ci`, `biome ci` (lint and format check), `npm run build`, `tsc --noEmit` | `web` |
+| `proto-ci.yml` | Lint copies, `buf lint`, `buf format`, and on PRs `buf breaking` against the base commit: a break fails unless the PR title has `!`. Then `buf generate`, and the same .NET and TypeScript checks as the two workflows above for the two packages. Publishing on `main` is added by contracts#2. | `contracts` |
 | `contracts-bump.yml` | Sets a new `contracts` version, builds and tests, then pushes `build(deps): bump contracts to X.Y.Z` to `main` with the GitHub App's token, which is on each repo's ruleset bypass list. If the build fails, it opens a PR for the repo's owner instead. | `sandbox`, `api`, `web` |
 | `lint-sync.yml` | Runs `lint/sync.sh` at the `platform` commit sent after a change to `lint/`, with the flags in the repo's `.lint-sync`, builds and tests, then pushes `chore: sync lint configs` to `main` with the GitHub App's token. If the build fails, it opens a PR instead. It pushes nothing when no copy changed. | `contracts`, `sandbox`, `api`, `web` |
 | `container-publish.yml` | buildx → GHCR, multi-arch, tagged with the commit SHA, and with the version on a tag. A merge to `main` publishes an image. | `api`, `web`, scenario images |
 | `release-binary.yml` | `dotnet publish` for linux-x64 and linux-arm64 → GitHub Release | `sandbox` |
 | `sandbox-template.yml` | Builds the qcow2 sandbox template with Packer, with the pinned harness and scenario images. Runs on the **self-hosted runner** on the course VM, because it needs KVM. Public repos can't use that runner, so it is started from the private deploy repo. | deploy repo |
+| `platform-check.yml` | Runs on `platform`'s own PRs: actionlint, shellcheck on every `*.sh`, and `lint/sync.sh --check .`. Required in `platform`'s ruleset. | `platform` |
 | `pr-title.yml` | Fails a PR whose title isn't a Conventional Commit (max 72 characters, no trailing period) | every repo |
 | `pr-assign.yml` | Assigns each PR to the person who opened it. Skips forks and bots. | every repo |
 | `copilot-review.yml` | Requests one Copilot review when a PR opens or is marked ready. Skips drafts, bots, Markdown-only PRs and the `skip-copilot` label. | every repo |
 
-A consuming repository's CI file:
+"Lint copies" means the workflow fetches `platform` at the commit in the repo's `.lint-sync` and runs `lint/sync.sh --check` with the repo's flags, so a hand edit fails. None of the CI workflows runs tests yet; a test step comes once the repos have tests.
+
+A repository's `ci.yml`:
 
 ```yaml
 name: ci
+
 on:
   pull_request:
   push:
     branches: [main]
 
+permissions: {}
+
 jobs:
   ci:
+    permissions:
+      contents: read
     uses: kubernetes-learning-platform/platform/.github/workflows/dotnet-ci.yml@main
-    secrets: inherit
 ```
+
+`contracts` calls `proto-ci.yml` instead, with `types: [opened, edited, reopened, synchronize]` under `pull_request`, so adding `!` to a PR title re-runs the breaking check.
+
+| Workflow | Inputs (default) | Check name, with the `ci` job above |
+|---|---|---|
+| `dotnet-ci.yml` | `dotnet-version` (`10.0.x`) | `ci / .NET checks` |
+| `node-ci.yml` | `node-version` (`24`), `working-directory` (`.`) | `ci / Node checks` |
+| `proto-ci.yml` | `buf-version` (`1.75.0`), `dotnet-version`, `node-version`, `dotnet-project` (`dotnet/KubernetesLearning.Contracts`), `ts-directory` (`ts`) | `ci / Protobuf checks` |
+
+A Node package needs a `package-lock.json`, a `build` script, and `@biomejs/biome` and `typescript` as dev dependencies.
+
+The job names are fixed, so the check names don't change. Once a repository's `ci.yml` has run, add its check to that repository's `main` ruleset as required, next to the PR title check. Don't add it earlier: a required check that has never reported blocks every merge.
 
 ## Lint configs
 
@@ -93,7 +112,7 @@ lint/sync.sh --dotnet --node ../contracts
 
 After a change to `lint/` merges, the update bot (platform#31) runs `lint-sync.yml` in each repo with lint copies. It syncs, builds and tests, then pushes `chore: sync lint configs` to `main`, or opens a PR for the repo's owner if the build fails. Only the first sync, while scaffolding a repo, is done by hand.
 
-`--check` changes nothing: it prints a diff for each copy that differs and exits 1. The reusable CI will check out `platform` at the commit in `.lint-sync` and run it (platform#4), so a hand edit fails, but a newer change in `platform` doesn't block a repo while its sync is pending. Don't edit the copies in a repo. Settings for one repo go in its project files, in a nested `Directory.Build.props` that imports the root one, or in a nested `biome.json` with `"extends": "//"`.
+`--check` changes nothing: it prints a diff for each copy that differs and exits 1. The reusable CI checks out `platform` at the commit in `.lint-sync` and runs it, so a hand edit fails, but a newer change in `platform` doesn't block a repo while its sync is pending. Don't edit the copies in a repo. Settings for one repo go in its project files, in a nested `Directory.Build.props` that imports the root one, or in a nested `biome.json` with `"extends": "//"`.
 
 | Language | Checked with |
 |---|---|

@@ -1,0 +1,56 @@
+name: dotnet-ci
+
+# Checks a .NET repo: its lint copies, formatting and the Release build.
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: The .NET SDK version to install.
+        type: string
+        default: 10.0.x
+
+permissions: {}
+
+jobs:
+  check:
+    name: .NET checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Check the lint copies against platform
+        env:
+          PLATFORM: ${{ runner.temp }}/platform
+        run: |
+          commit="$(sed -n 's/^commit=//p' .lint-sync 2>/dev/null || true)"
+          if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error file=.lint-sync::No valid commit in .lint-sync. Run lint/sync.sh --dotnet from platform to create it."
+            exit 1
+          fi
+          git init -q "$PLATFORM"
+          git -C "$PLATFORM" fetch -q --depth 1 https://github.com/kubernetes-learning-platform/platform.git "$commit"
+          git -C "$PLATFORM" checkout -q FETCH_HEAD
+          "$PLATFORM/lint/sync.sh" --check --dotnet .
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Check formatting
+        run: dotnet format --verify-no-changes --no-restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
