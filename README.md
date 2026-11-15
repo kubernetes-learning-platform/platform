@@ -61,8 +61,6 @@ name: ci
 
 on:
   pull_request:
-  push:
-    branches: [main]
 
 permissions: {}
 
@@ -73,7 +71,7 @@ jobs:
     uses: kubernetes-learning-platform/platform/.github/workflows/dotnet-ci.yml@main
 ```
 
-`contracts` calls `proto-ci.yml` instead, with `types: [opened, edited, reopened, synchronize]` under `pull_request`, so adding `!` to a PR title re-runs the breaking check.
+CI runs on pull requests only. Branches must be up to date with `main` before merging, so the PR checks already cover what lands there, and a second run on `main` would repeat them. `contracts` calls `proto-ci.yml` instead, with `types: [opened, edited, reopened, synchronize]` under `pull_request`, so adding `!` to a PR title re-runs the breaking check.
 
 | Workflow | Inputs (default) | Check name, with the `ci` job above |
 |---|---|---|
