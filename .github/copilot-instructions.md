@@ -17,7 +17,7 @@ This repo holds shared tooling for every kubernetes-learning-platform repo: reus
 - **No infrastructure code.** The course VM is set up by `deploy/vm/install.sh`; sandboxes are created by envmgr, not here.
 - **Self-hosted runner.** Only the deploy workflow and `sandbox-template.yml` run on it, started from the private deploy repo. The repos are public and the runner group blocks public repos. Flag other workflows that target it.
 - **Update bot.** `contracts-bump.yml` and `lint-sync.yml` push to a repo's `main` with the GitHub App's token only after the build and tests pass; otherwise they open a PR. Flag changes that let them push without a passing build, and any job that can use the App's key from a pull request. `pr-assign.yml` must stay on `pull_request` and never check out PR code.
-- **Lint configs.** A change in `lint/` changes the rules for every repo. Say which repos it affects. Platform's root `.editorconfig` must stay identical to `lint/.editorconfig`, and the Biome version in `biome.json`'s `$schema` is the one every repo pins. `lint/sync.sh` records the `platform` commit and its flags in each repo's `.lint-sync`.
+- **Lint configs.** A change in `lint/` changes the rules for every repo. Say which repos it affects. Platform's root `.editorconfig` must stay identical to `lint/.editorconfig`, and the Biome version in `biome.json`'s `$schema` is the one every repo pins. Biome's Markdown formatter and linter are off; flag a change that turns them on. `lint/sync.sh` records the `platform` commit and its flags in each repo's `.lint-sync`.
 
 ## Conventions this repo enforces
 - PR titles are Conventional Commits (`feat: short description`), one line, at most 72 characters, no trailing period. `pr-title.yml` checks this for every repo.
