@@ -33,5 +33,13 @@
     "parser": {
       "tailwindDirectives": true
     }
+  },
+  "markdown": {
+    "formatter": {
+      "enabled": false
+    },
+    "linter": {
+      "enabled": false
+    }
   }
 }

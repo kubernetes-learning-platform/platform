@@ -95,7 +95,7 @@ lint/sync.sh --dotnet --node ../contracts
 |---|---|---|
 | `.editorconfig` | always | UTF-8, LF, final newline, 4-space indent (2 for web, config and Markdown files), and the C# style and naming rules |
 | `Directory.Build.props` | with `--dotnet` | `TreatWarningsAsErrors`, `AnalysisLevel=latest-recommended`, `EnforceCodeStyleInBuild`, nullable reference types, the latest C# version, and XML docs, which the unused-usings rule needs to run on build |
-| `biome.json` | with `--node` | Biome's recommended lint rules, formatting for TypeScript, JavaScript, JSON and CSS (2 spaces, 100 columns), import sorting and Tailwind directives. Biome adds the Next.js and React rules when `package.json` lists them, and skips files in `.gitignore`. |
+| `biome.json` | with `--node` | Biome's recommended lint rules, formatting for TypeScript, JavaScript, JSON and CSS (2 spaces, 100 columns), import sorting and Tailwind directives. Biome adds the Next.js and React rules when `package.json` lists them, and skips files in `.gitignore`. Markdown is off, so the docs keep the same hand-written style as in the repos without Biome. |
 
 | Repo | Flags |
 |---|---|
