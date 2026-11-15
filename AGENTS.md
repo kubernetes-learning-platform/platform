@@ -16,7 +16,7 @@ Shared tooling for every kubernetes-learning-platform repo. Nothing here runs as
 The course VM (16 vCPU, 32 GB) runs everything and is reached only over Tailscale. Caddy serves our Cloudflare domain with a DNS-01 certificate. `envmgr` runs under systemd on the host. The deploy format for the stack, Docker Compose or a Helm chart on k3s, is OPEN.
 
 - **Owner:** Filip.
-- **Status:** `pr-title.yml`, `copilot-review.yml`, `pr-assign.yml` and `lint/` exist. Everything else is planned in the setup issues (platform#4 onwards).
+- **Status:** `pr-title.yml`, `copilot-review.yml`, `pr-assign.yml`, `dotnet-ci.yml`, `node-ci.yml`, `proto-ci.yml`, `platform-check.yml` and `lint/` exist. The CI workflows don't run tests yet. Everything else is planned in the setup issues.
 - **Design:** `README.md` here, and ARCHITECTURE §8 and ADR 0003 in the `docs` repo. Where they disagree, the `docs` repo wins.
 
 ## Layout
@@ -24,7 +24,7 @@ The course VM (16 vCPU, 32 GB) runs everything and is reached only over Tailscal
 ```
 platform/
 ├── .github/workflows/   # pr-title, copilot-review, pr-assign, dotnet-ci, node-ci, proto-ci, contracts-bump,
-│                        # lint-sync, container-publish, release-binary, sandbox-template
+│                        # lint-sync, container-publish, release-binary, sandbox-template, platform-check
 ├── lint/                # .editorconfig, Directory.Build.props, biome.json, sync.sh
 ├── deploy/vm/           # install.sh, envmgr unit, libvirt network, nftables, Caddyfile, *.env.example
 └── dev/                 # docker-compose.dev.yml
@@ -39,6 +39,7 @@ There is no build. Before saying a change is done:
 
 ## Rules
 
+- **Required check names.** The job names in `dotnet-ci.yml`, `node-ci.yml` and `proto-ci.yml` (`.NET checks`, `Node checks`, `Protobuf checks`) are part of the required check names in the callers' rulesets, as in `ci / .NET checks`. Renaming one blocks every merge in the repos that require it until their rulesets are updated.
 - **Blast radius.** A change to a reusable workflow's inputs, outputs or behaviour breaks every caller at `@main`. Keep it backward compatible or update the callers in the same piece of work.
 - **Workflow security.** Reusable workflows are `on: workflow_call`. `permissions` defaults to `{}`, and each job grants only what it needs. Never put `${{ github.event.* }}` or other untrusted input directly into `run:`; pass it through `env:`. Third-party actions are pinned to a full commit SHA. Every job has `timeout-minutes`.
 - **Secrets.** Only `*.env.example` files are committed. Never real env files, tokens, Tailscale auth keys, the Cloudflare token or GitHub App keys.
