@@ -16,8 +16,8 @@ This repo holds shared tooling for every kubernetes-learning-platform repo: reus
 - **Network isolation.** Sandboxes on the isolated libvirt network may reach only `10.67.0.1:7071`, and envmgr's gRPC port accepts only the stack. Sandboxes can't reach RabbitMQ. The tailnet ACL allows only SSH and the app's HTTPS port. Flag rule changes that widen any of these.
 - **No infrastructure code.** The course VM is set up by `deploy/vm/install.sh`; sandboxes are created by envmgr, not here.
 - **Self-hosted runner.** Only the deploy workflow and `sandbox-template.yml` run on it, started from the private deploy repo. The repos are public and the runner group blocks public repos. Flag other workflows that target it.
-- **Contracts bumps.** `contracts-bump.yml` pushes to a repo's `main` with the GitHub App's token only after the build and tests pass; otherwise it opens a PR. Flag changes that let it push without a passing build. `pr-assign.yml` must stay on `pull_request` and never check out PR code.
-- **Lint configs.** A change in `lint/` changes the rules for every repo. Say which repos it affects.
+- **Update bot.** `contracts-bump.yml` and `lint-sync.yml` push to a repo's `main` with the GitHub App's token only after the build and tests pass; otherwise they open a PR. Flag changes that let them push without a passing build, and any job that can use the App's key from a pull request. `pr-assign.yml` must stay on `pull_request` and never check out PR code.
+- **Lint configs.** A change in `lint/` changes the rules for every repo. Say which repos it affects. Platform's root `.editorconfig` must stay identical to `lint/.editorconfig`, and the Biome version in `biome.json`'s `$schema` is the one every repo pins. `lint/sync.sh` records the `platform` commit and its flags in each repo's `.lint-sync`.
 
 ## Conventions this repo enforces
 - PR titles are Conventional Commits (`feat: short description`), one line, at most 72 characters, no trailing period. `pr-title.yml` checks this for every repo.

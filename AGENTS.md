@@ -16,7 +16,7 @@ Shared tooling for every kubernetes-learning-platform repo. Nothing here runs as
 The course VM (16 vCPU, 32 GB) runs everything and is reached only over Tailscale. Caddy serves our Cloudflare domain with a DNS-01 certificate. `envmgr` runs under systemd on the host. The deploy format for the stack, Docker Compose or a Helm chart on k3s, is OPEN.
 
 - **Owner:** Filip.
-- **Status:** `pr-title.yml`, `copilot-review.yml` and `pr-assign.yml` exist. Everything else is planned in the setup issues (platform#3 onwards).
+- **Status:** `pr-title.yml`, `copilot-review.yml`, `pr-assign.yml` and `lint/` exist. Everything else is planned in the setup issues (platform#4 onwards).
 - **Design:** `README.md` here, and ARCHITECTURE §8 and ADR 0003 in the `docs` repo. Where they disagree, the `docs` repo wins.
 
 ## Layout
@@ -24,7 +24,7 @@ The course VM (16 vCPU, 32 GB) runs everything and is reached only over Tailscal
 ```
 platform/
 ├── .github/workflows/   # pr-title, copilot-review, pr-assign, dotnet-ci, node-ci, proto-ci, contracts-bump,
-│                        # container-publish, release-binary, sandbox-template
+│                        # lint-sync, container-publish, release-binary, sandbox-template
 ├── lint/                # .editorconfig, Directory.Build.props, biome.json, sync.sh
 ├── deploy/vm/           # install.sh, envmgr unit, libvirt network, nftables, Caddyfile, *.env.example
 └── dev/                 # docker-compose.dev.yml
@@ -47,10 +47,10 @@ There is no build. Before saying a change is done:
 - **Network isolation.** Sandboxes reach only `envmgr`'s harness endpoint (`10.67.0.1:7071`). `envmgr`'s gRPC port accepts only the stack. Sandboxes can't reach RabbitMQ. The tailnet ACL allows only SSH and the app's HTTPS port. Never widen any of these without the user's say-so.
 - **No infrastructure code.** The course VM is set up by `deploy/vm/install.sh`. Sandboxes are created by `envmgr`, not here.
 - **Self-hosted runner.** Only the deploy workflow and `sandbox-template.yml` run on it, both started from the private deploy repo. The org's runner group blocks public repos, and that stays so.
-- **Contracts bumps.** `contracts-bump.yml` pushes to a repo's `main` with the GitHub App's token, and only after its build and tests pass; otherwise it opens a PR. The App is on each repo's `main` ruleset bypass list, and nothing else gets a bypass except repo admins.
+- **Update bot (platform#31).** `contracts-bump.yml` and `lint-sync.yml` push to a repo's `main` with the GitHub App's token, and only after its build and tests pass; otherwise they open a PR. The App is on the `main` ruleset bypass list in `contracts`, `sandbox`, `api`, `web` and `docs`, and nothing else gets a bypass except repo admins. The `lint-updated` event is sent only from pushes to `platform/main`, never from a PR, because the App's key must not reach PR code.
 - **PR assignment.** `pr-assign.yml` runs on `pull_request`, skips forks and bots, and never checks out PR code. Don't switch it to `pull_request_target`.
 - **Copilot reviews cost credits.** `copilot-review.yml` requests one review per PR. Don't make it run more often.
-- **Lint configs.** A change in `lint/` changes the rules for every repo. Say which repos it affects.
+- **Lint configs.** A change in `lint/` changes the rules for every repo. Say which repos it affects. `lint/sync.sh` copies `.editorconfig` always, `Directory.Build.props` with `--dotnet` and `biome.json` with `--node`, and records the `platform` commit and the flags in the repo's `.lint-sync`; `--check` only reports drift. After a merge, the update bot syncs the other repos, so a rule that breaks a repo's build ends up as a PR for its owner. Platform's own root `.editorconfig` stays identical to `lint/.editorconfig`: run `lint/sync.sh .` after changing it. The `$schema` version in `biome.json` is the Biome version every repo pins.
 
 ## Commits, branches and PRs
 
