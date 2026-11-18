@@ -53,7 +53,7 @@ The workflows here are reusable (`on: workflow_call`), so the other repositories
 | `platform-check.yml` | Runs on `platform`'s own PRs: actionlint, shellcheck on every `*.sh`, and `lint/sync.sh --check .`. Required in `platform`'s ruleset. | `platform` |
 | `pr-title.yml` | Fails a PR whose title isn't a Conventional Commit (max 72 characters, no trailing period) | every repo |
 | `pr-assign.yml` | Assigns each PR to the person who opened it. Skips forks and bots. | every repo |
-| `copilot-review.yml` | Requests one Copilot review when a PR opens or is marked ready. Skips drafts, bots, Markdown-only PRs and the `skip-copilot` label. | every repo |
+| `copilot-review.yml` | Requests one Copilot review when a `feat` PR opens or is marked ready. Skips other types, drafts, bots, Markdown-only PRs and the `skip-copilot` label. | every repo |
 
 "Lint copies" means the workflow fetches `platform` at the commit in the repo's `.lint-sync` and runs `lint/sync.sh --check` with the repo's flags, so a hand edit fails. None of the CI workflows runs tests yet; a test step comes once the repos have tests.
 
@@ -224,7 +224,7 @@ The bot is an organization-owned GitHub App. Workflows read its client ID from t
 
 - **Conventional Commits, strictly:** `feat: short description`. One line, no body, no co-author trailers.
 - **PR titles** use the same format, at most 72 characters, no trailing period. PRs are squash-merged and the squash commit is the PR title, so `main` reads as one clean line per change. The `pr-title` check fails any PR whose title breaks this.
-- **Copilot review:** `copilot-review` asks Copilot for one review when a PR opens or is marked ready. It skips drafts, bots, Markdown-only PRs and PRs labelled `skip-copilot`. It needs Copilot on your own account, which is free through GitHub Student.
+- **Copilot review:** `copilot-review` asks Copilot for one review when a `feat` PR (including `feat!`) opens or is marked ready. Other types get none; request one by hand on the PR if needed. It skips drafts, bots, Markdown-only PRs and PRs labelled `skip-copilot`. It needs Copilot on your own account, which is free through GitHub Student.
 - **Branches** are `type/anything`, e.g. `feat/warm-pool`, `fix/harness-reconnect`, `ci/pr-title-check`. Same types as commits, no issue number, not checked by CI. Short-lived, cut from `main`, deleted after merge.
 - **Branches for an issue:** every issue names its branch in a `Branch:` line. Create it with `gh issue develop 12 --name feat/warm-pool --checkout`, or with the issue's **Create a branch** button and that name instead of GitHub's suggestion (`12-add-warm-pool`). The branch and its PR stay linked to the issue.
 - **Reviews:** `main` is protected by a ruleset in every repo: no force-push or deletion, PRs only, squash merges, the `pr-title` check must pass on a branch that is up to date with `main`, and one approval from someone other than the author. `.github/CODEOWNERS` requests Filip's review on every PR, and `pr-assign` assigns the author. Repo admins can bypass the ruleset.

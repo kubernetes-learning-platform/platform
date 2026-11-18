@@ -21,7 +21,7 @@ This repo holds shared tooling for every kubernetes-learning-platform repo: reus
 
 ## Conventions this repo enforces
 - PR titles are Conventional Commits (`feat: short description`), one line, at most 72 characters, no trailing period. `pr-title.yml` checks this for every repo.
-- `copilot-review.yml` requests one Copilot review per PR, because reviews cost AI credits. Flag changes that make it run more often: triggering on `synchronize`, or dropping a skip (drafts, bots, forks, Markdown-only PRs, the `skip-copilot` label, already reviewed).
+- `copilot-review.yml` requests one Copilot review per `feat` PR, because reviews cost AI credits. Flag changes that make it run more often: triggering on `synchronize`, or dropping a skip (non-`feat` titles, drafts, bots, forks, Markdown-only PRs, the `skip-copilot` label, already reviewed).
 - Branches are `type/anything`, e.g. `feat/warm-pool`, taken from the issue's `Branch:` line.
 - Files are UTF-8 with LF line endings.
 
