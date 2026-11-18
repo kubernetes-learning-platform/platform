@@ -1,0 +1,179 @@
+name: contracts-bump
+
+# Moves a repo to a new contracts version, then pushes it to main or opens a PR through update-push.yml.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The contracts version to move to, as X.Y.Z.
+        type: string
+        required: true
+      ci:
+        description: The reusable CI that checks the bump, as in the repo's ci.yml. dotnet-ci, node-ci or proto-ci.
+        type: string
+        required: true
+    secrets:
+      app-private-key:
+        description: The update bot App's private key.
+        required: true
+
+permissions: {}
+
+jobs:
+  bump:
+    name: Set the contracts version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      branch: ${{ steps.inputs.outputs.branch }}
+      title: ${{ steps.inputs.outputs.title }}
+      sha: ${{ steps.commit.outputs.sha }}
+    env:
+      NUGET_ID: KubernetesLearning.Contracts
+      NPM_NAME: "@kubernetes-learning-platform/contracts"
+    steps:
+      - name: Check the inputs
+        id: inputs
+        env:
+          VERSION: ${{ inputs.version }}
+          CI: ${{ inputs.ci }}
+        run: |
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::\"$VERSION\" is not a version. contracts-bump expects X.Y.Z."
+            exit 1
+          fi
+          if [[ ! "$CI" =~ ^(dotnet|node|proto)-ci$ ]]; then
+            echo "::error::\"$CI\" is not dotnet-ci, node-ci or proto-ci."
+            exit 1
+          fi
+          echo "branch=deps/contracts-$VERSION" >>"$GITHUB_OUTPUT"
+          echo "title=build(deps): bump contracts to $VERSION" >>"$GITHUB_OUTPUT"
+
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Find the contracts references
+        id: find
+        env:
+          VERSION: ${{ inputs.version }}
+          LISTS: ${{ runner.temp }}/contracts
+        run: |
+          mkdir -p "$LISTS"
+          git grep -l -F "Include=\"$NUGET_ID\"" -- '*.csproj' '*Directory.Packages.props' >"$LISTS/nuget" || true
+          : >"$LISTS/npm"
+          while IFS= read -r -d '' manifest; do
+            if jq -e --arg name "$NPM_NAME" '(.dependencies // {}) + (.devDependencies // {}) | has($name)' "$manifest" >/dev/null; then
+              dirname "$manifest" >>"$LISTS/npm"
+            fi
+          done < <(git ls-files -z -- package.json '*/package.json')
+
+          if [[ ! -s "$LISTS/nuget" && ! -s "$LISTS/npm" ]]; then
+            echo "::notice::This repo doesn't reference $NUGET_ID or $NPM_NAME, so there is nothing to bump."
+            exit 0
+          fi
+
+          current="$(
+            while IFS= read -r file; do
+              grep -F "Include=\"$NUGET_ID\"" "$file" | sed -n -E 's/.*[[:space:]]Version="([^"]*)".*/\1/p'
+            done <"$LISTS/nuget"
+            while IFS= read -r dir; do
+              jq -r --arg name "$NPM_NAME" '.dependencies[$name] // .devDependencies[$name]' "$dir/package.json"
+            done <"$LISTS/npm"
+          )"
+          while IFS= read -r pinned; do
+            [[ -n "$pinned" ]] || continue
+            if [[ "$(printf '%s\n%s\n' "$pinned" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]]; then
+              echo "::notice::This repo already pins contracts $pinned, which is newer than $VERSION."
+              exit 0
+            fi
+          done <<<"$current"
+
+          echo "nuget=$([[ -s "$LISTS/nuget" ]] && echo true || echo false)" >>"$GITHUB_OUTPUT"
+          echo "npm=$([[ -s "$LISTS/npm" ]] && echo true || echo false)" >>"$GITHUB_OUTPUT"
+
+      - name: Set the NuGet version
+        if: steps.find.outputs.nuget == 'true'
+        env:
+          VERSION: ${{ inputs.version }}
+          LISTS: ${{ runner.temp }}/contracts
+        run: |
+          pattern="Include=\"${NUGET_ID//./\\.}\""
+          while IFS= read -r file; do
+            sed -i -E "/$pattern/ s/([[:space:]]Version=\")[^\"]*\"/\1$VERSION\"/" "$file"
+            echo "Set $NUGET_ID to $VERSION in $file"
+          done <"$LISTS/nuget"
+
+      - name: Install Node.js
+        if: steps.find.outputs.npm == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24"
+          registry-url: https://npm.pkg.github.com
+          scope: "@kubernetes-learning-platform"
+
+      - name: Set the npm version
+        if: steps.find.outputs.npm == 'true'
+        env:
+          VERSION: ${{ inputs.version }}
+          LISTS: ${{ runner.temp }}/contracts
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          GITHUB_PACKAGES_TOKEN: ${{ github.token }}
+        run: |
+          while IFS= read -r dir; do
+            save=--save-prod
+            if jq -e --arg name "$NPM_NAME" '(.devDependencies // {}) | has($name)' "$dir/package.json" >/dev/null; then
+              save=--save-dev
+            fi
+            (cd "$dir" && npm install "$save" --save-exact --ignore-scripts --no-audit --no-fund "$NPM_NAME@$VERSION")
+            echo "Set $NPM_NAME to $VERSION in $dir/package.json"
+          done <"$LISTS/npm"
+
+      - name: Look for changes
+        id: changes
+        run: |
+          git status --short
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "changed=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "::notice::Nothing changed, so there is nothing to push."
+          fi
+
+      - name: Create the update bot's token
+        id: token
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          client-id: ${{ vars.UPDATE_BOT_APP_ID }}
+          private-key: ${{ secrets.app-private-key }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - name: Commit to the update branch
+        id: commit
+        if: steps.changes.outputs.changed == 'true'
+        uses: kubernetes-learning-platform/platform/.github/actions/update-branch@main
+        with:
+          token: ${{ steps.token.outputs.token }}
+          branch: ${{ steps.inputs.outputs.branch }}
+          message: ${{ steps.inputs.outputs.title }}
+
+  push:
+    needs: bump
+    if: needs.bump.outputs.sha != ''
+    permissions:
+      contents: read
+    uses: kubernetes-learning-platform/platform/.github/workflows/update-push.yml@main
+    with:
+      ci: ${{ inputs.ci }}
+      branch: ${{ needs.bump.outputs.branch }}
+      sha: ${{ needs.bump.outputs.sha }}
+      title: ${{ needs.bump.outputs.title }}
+      app-id: ${{ vars.UPDATE_BOT_APP_ID }}
+    secrets:
+      app-private-key: ${{ secrets.app-private-key }}

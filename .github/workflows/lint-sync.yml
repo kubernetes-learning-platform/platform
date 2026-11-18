@@ -1,0 +1,122 @@
+name: lint-sync
+
+# Syncs a repo's lint copies to a platform commit, then pushes them to main or opens a PR through update-push.yml.
+on:
+  workflow_call:
+    inputs:
+      commit:
+        description: The platform commit on main to sync to, all 40 characters.
+        type: string
+        required: true
+      ci:
+        description: The reusable CI that checks the sync, as in the repo's ci.yml. dotnet-ci, node-ci or proto-ci.
+        type: string
+        required: true
+    secrets:
+      app-private-key:
+        description: The update bot App's private key.
+        required: true
+
+permissions: {}
+
+jobs:
+  sync:
+    name: Sync the lint configs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      branch: ${{ steps.inputs.outputs.branch }}
+      sha: ${{ steps.commit.outputs.sha }}
+    env:
+      COMMIT: ${{ inputs.commit }}
+      TITLE: "chore: sync lint configs"
+    steps:
+      - name: Check the inputs
+        id: inputs
+        env:
+          CI: ${{ inputs.ci }}
+        run: |
+          if [[ ! "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::\"$COMMIT\" is not a full commit SHA."
+            exit 1
+          fi
+          if [[ ! "$CI" =~ ^(dotnet|node|proto)-ci$ ]]; then
+            echo "::error::\"$CI\" is not dotnet-ci, node-ci or proto-ci."
+            exit 1
+          fi
+          echo "branch=chore/lint-sync-${COMMIT:0:7}" >>"$GITHUB_OUTPUT"
+
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Check out platform at the commit
+        env:
+          PLATFORM: ${{ runner.temp }}/platform
+        run: |
+          git init -q "$PLATFORM"
+          git -C "$PLATFORM" fetch -q https://github.com/kubernetes-learning-platform/platform.git main
+          if ! git -C "$PLATFORM" merge-base --is-ancestor "$COMMIT" FETCH_HEAD 2>/dev/null; then
+            echo "::error::$COMMIT is not on platform's main."
+            exit 1
+          fi
+          git -C "$PLATFORM" checkout -q "$COMMIT"
+
+      - name: Sync the lint copies
+        id: sync
+        env:
+          PLATFORM: ${{ runner.temp }}/platform
+        run: |
+          if [[ ! -f .lint-sync ]]; then
+            echo "::error file=.lint-sync::This repo has no .lint-sync. Run lint/sync.sh with its flags by hand once."
+            exit 1
+          fi
+          recorded="$(sed -n 's/^commit=//p' .lint-sync)"
+          if [[ "$recorded" != "$COMMIT" ]] && git -C "$PLATFORM" merge-base --is-ancestor "$COMMIT" "$recorded" 2>/dev/null; then
+            echo "::notice::The copies are already synced to ${recorded:0:7}, which is newer than ${COMMIT:0:7}."
+            exit 0
+          fi
+          "$PLATFORM/lint/sync.sh" .
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "changed=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "::notice::No lint copy changed, so there is nothing to push."
+          fi
+
+      - name: Create the update bot's token
+        id: token
+        if: steps.sync.outputs.changed == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          client-id: ${{ vars.UPDATE_BOT_APP_ID }}
+          private-key: ${{ secrets.app-private-key }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - name: Commit to the update branch
+        id: commit
+        if: steps.sync.outputs.changed == 'true'
+        uses: kubernetes-learning-platform/platform/.github/actions/update-branch@main
+        with:
+          token: ${{ steps.token.outputs.token }}
+          branch: ${{ steps.inputs.outputs.branch }}
+          message: ${{ env.TITLE }}
+
+  push:
+    needs: sync
+    if: needs.sync.outputs.sha != ''
+    permissions:
+      contents: read
+    uses: kubernetes-learning-platform/platform/.github/workflows/update-push.yml@main
+    with:
+      ci: ${{ inputs.ci }}
+      branch: ${{ needs.sync.outputs.branch }}
+      sha: ${{ needs.sync.outputs.sha }}
+      title: "chore: sync lint configs"
+      app-id: ${{ vars.UPDATE_BOT_APP_ID }}
+    secrets:
+      app-private-key: ${{ secrets.app-private-key }}

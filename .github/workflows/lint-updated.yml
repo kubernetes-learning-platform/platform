@@ -1,0 +1,45 @@
+name: lint-updated
+
+# Sends lint-updated to the repos with lint copies after a change to lint/ lands on main. Never runs on PRs.
+on:
+  push:
+    branches: [main]
+    paths: ["lint/**"]
+
+permissions: {}
+
+jobs:
+  notify:
+    name: Send lint-updated
+    if: github.repository == 'kubernetes-learning-platform/platform' && vars.UPDATE_BOT_APP_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Create the update bot's token
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        with:
+          client-id: ${{ vars.UPDATE_BOT_APP_ID }}
+          private-key: ${{ secrets.UPDATE_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: contracts,sandbox,api,web
+          permission-contents: write
+
+      - name: Send lint-updated
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          failed=0
+          for repo in contracts sandbox api web; do
+            if jq -n --arg commit "$COMMIT" '{event_type: "lint-updated", client_payload: {commit: $commit}}' |
+              gh api "repos/$OWNER/$repo/dispatches" --input - --silent; then
+              echo "Sent lint-updated for ${COMMIT:0:7} to $repo"
+            else
+              echo "::error::Couldn't send lint-updated to $repo."
+              failed=1
+            fi
+          done
+          exit "$failed"
