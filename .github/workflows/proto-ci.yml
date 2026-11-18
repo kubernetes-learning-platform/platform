@@ -76,6 +76,11 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           TITLE: ${{ github.event.pull_request.title }}
         run: |
+          base_protos="$(git ls-tree -r --name-only "$BASE_SHA" | grep '\.proto$' || true)"
+          if [[ -z "$base_protos" ]]; then
+            echo "::notice title=No base schema::The base commit has no .proto files, so there is nothing to compare against."
+            exit 0
+          fi
           status=0
           buf breaking --against ".git#ref=$BASE_SHA" || status=$?
           if [[ "$status" -eq 0 ]]; then
