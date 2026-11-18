@@ -1,6 +1,6 @@
 name: copilot-review
 
-# Requests one Copilot review per PR, skipping drafts, bots, forks, Markdown-only PRs and the skip-copilot label.
+# Requests one Copilot review per feat PR, skipping drafts, bots, forks, Markdown-only PRs and the skip-copilot label.
 on:
   workflow_call:
   pull_request:
@@ -12,6 +12,9 @@ jobs:
   request:
     name: Request Copilot review
     if: >-
+      (startsWith(github.event.pull_request.title, 'feat:') ||
+      startsWith(github.event.pull_request.title, 'feat!:') ||
+      startsWith(github.event.pull_request.title, 'feat(')) &&
       !github.event.pull_request.draft &&
       github.event.pull_request.user.type != 'Bot' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
