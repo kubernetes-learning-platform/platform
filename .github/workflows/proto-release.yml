@@ -1,0 +1,217 @@
+name: proto-release
+
+# Publishes the contracts packages, tags vX.Y.Z and notifies the consumers, for a push to main.
+on:
+  workflow_call:
+    inputs:
+      buf-version:
+        description: The buf CLI version to install.
+        type: string
+        default: 1.75.0
+      dotnet-version:
+        description: The .NET SDK version to install.
+        type: string
+        default: 10.0.x
+      node-version:
+        description: The Node.js version to install.
+        type: string
+        default: "24"
+      dotnet-project:
+        description: The folder of the .NET package project.
+        type: string
+        default: dotnet/KubernetesLearning.Contracts
+      ts-directory:
+        description: The folder of the TypeScript package.
+        type: string
+        default: ts
+      consumers:
+        description: The repos in this organization that get contracts-published, separated by commas.
+        type: string
+        default: sandbox,api,web
+      update-bot-app-id:
+        description: The update bot App's client ID. Empty skips the notification.
+        type: string
+        default: ""
+    secrets:
+      update-bot-private-key:
+        description: The update bot App's private key.
+        required: false
+    outputs:
+      version:
+        description: The published version, or empty when nothing was published.
+        value: ${{ jobs.version.outputs.version }}
+
+permissions: {}
+
+jobs:
+  version:
+    name: Pick the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Pick the version from the commit subject
+        id: pick
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          tags="$(git tag --points-at HEAD --list 'v[0-9]*.[0-9]*.[0-9]*')"
+          if [[ -n "$tags" ]]; then
+            version="$(sed -n 1p <<<"$tags")"
+            version="${version#v}"
+            echo "::notice title=Release::This commit is already tagged v$version; publishing it again."
+            echo "version=$version" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          subject="${MESSAGE%%$'\n'*}"
+          pattern='^([a-z]+)(\([a-z0-9-]+\))?(!)?: '
+          if [[ ! "$subject" =~ $pattern ]]; then
+            echo "::notice title=No release::The subject is not a Conventional Commit, so nothing is published."
+            exit 0
+          fi
+          type="${BASH_REMATCH[1]}"
+          breaking="${BASH_REMATCH[3]}"
+          if [[ -z "$breaking" && "$type" != feat && "$type" != fix ]]; then
+            echo "::notice title=No release::A $type commit publishes nothing."
+            exit 0
+          fi
+          latest="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | sed -n 1p)"
+          if [[ -z "$latest" ]]; then
+            version=0.1.0
+          else
+            IFS=. read -r major minor patch <<<"${latest#v}"
+            if [[ -n "$breaking" && "$major" -eq 0 ]]; then
+              version="0.$((minor + 1)).0"
+            elif [[ -n "$breaking" ]]; then
+              version="$((major + 1)).0.0"
+            else
+              version="$major.$minor.$((patch + 1))"
+            fi
+          fi
+          echo "::notice title=Release::Publishing $version (previous: ${latest:-none})."
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish the packages
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install buf
+        uses: bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6
+        with:
+          version: ${{ inputs.buf-version }}
+          setup_only: true
+
+      - name: Install Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: ${{ inputs.node-version }}
+          registry-url: https://npm.pkg.github.com
+          scope: "@kubernetes-learning-platform"
+          cache: npm
+          cache-dependency-path: ${{ inputs.ts-directory }}/package-lock.json
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Install the TypeScript package's dependencies
+        working-directory: ${{ inputs.ts-directory }}
+        run: npm ci
+
+      - name: Generate code
+        run: buf generate
+
+      - name: Pack the .NET package
+        working-directory: ${{ inputs.dotnet-project }}
+        run: dotnet pack --configuration Release -p:Version="$VERSION" --output "$RUNNER_TEMP/nupkg"
+
+      - name: Publish the .NET package
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dotnet nuget push "$RUNNER_TEMP/nupkg/*.nupkg" \
+            --source "https://nuget.pkg.github.com/$GITHUB_REPOSITORY_OWNER/index.json" \
+            --api-key "$GITHUB_TOKEN" \
+            --skip-duplicate
+
+      - name: Build and publish the npm package
+        working-directory: ${{ inputs.ts-directory }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          name="$(node -p 'require("./package.json").name')"
+          if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+            echo "::notice title=Already published::$name@$VERSION is already in the registry."
+            exit 0
+          fi
+          npm version "$VERSION" --no-git-tag-version
+          npm run build
+          npm publish
+
+      - name: Push the tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::notice title=Already tagged::v$VERSION exists."
+            exit 0
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/v$VERSION" -f "sha=$GITHUB_SHA" >/dev/null
+
+  notify:
+    name: Notify the consumers
+    needs: [version, publish]
+    if: inputs.update-bot-app-id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Get a token from the update bot App
+        id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc
+        with:
+          client-id: ${{ inputs.update-bot-app-id }}
+          private-key: ${{ secrets.update-bot-private-key }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ inputs.consumers }}
+
+      - name: Send contracts-published
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          CONSUMERS: ${{ inputs.consumers }}
+        run: |
+          IFS=, read -ra repos <<<"$CONSUMERS"
+          for repo in "${repos[@]}"; do
+            gh api "repos/$GITHUB_REPOSITORY_OWNER/$repo/dispatches" \
+              -f event_type=contracts-published \
+              -f "client_payload[version]=$VERSION" >/dev/null
+            echo "Sent contracts-published $VERSION to $repo."
+          done
