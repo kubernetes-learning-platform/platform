@@ -31,7 +31,7 @@ Part of [kubernetes-learning-platform](https://github.com/kubernetes-learning-pl
 3. A manual deploy from a private deploy repo puts a chosen version of the stack on the course VM. `envmgr` and the sandbox template are installed on the same VM.
 4. The VM is reached only over Tailscale. No port is open to the internet.
 
-Currently implemented: `pr-title.yml`, `copilot-review.yml`, `pr-assign.yml`, `dotnet-ci.yml`, `node-ci.yml`, `proto-ci.yml`, `platform-check.yml` and `lint/`. The remaining sections describe the planned layout.
+Currently implemented: `pr-title.yml`, `copilot-review.yml`, `pr-assign.yml`, `dotnet-ci.yml`, `node-ci.yml`, `proto-ci.yml`, `proto-release.yml`, `platform-check.yml`, the update bot (`contracts-bump.yml`, `lint-sync.yml`, `update-push.yml`, `lint-updated.yml` and `.github/actions/update-branch/`) and `lint/`. The remaining sections describe the planned layout.
 
 ## Reusable workflows
 
@@ -43,8 +43,10 @@ The workflows here are reusable (`on: workflow_call`), so the other repositories
 | `node-ci.yml` | Lint copies, `npm ci`, `biome ci` (lint and format check), `npm run build`, `tsc --noEmit` | `web` |
 | `proto-ci.yml` | Lint copies, `buf lint`, `buf format`, and on PRs `buf breaking` against the base commit: a break fails unless the PR title has `!`, and the check is skipped while the base has no `.proto` files. Then `buf generate`, and the same .NET and TypeScript checks as the two workflows above for the two packages. | `contracts` |
 | `proto-release.yml` | On a push to `main`: picks the version from the commit subject, packs and publishes both packages to GitHub Packages, pushes the `vX.Y.Z` tag, and sends `contracts-published` to the consumers once the update bot App exists. Reruns are safe. | `contracts` |
-| `contracts-bump.yml` | Sets a new `contracts` version, builds and tests, then pushes `build(deps): bump contracts to X.Y.Z` to `main` with the GitHub App's token, which is on each repo's ruleset bypass list. If the build fails, it opens a PR for the repo's owner instead. | `sandbox`, `api`, `web` |
-| `lint-sync.yml` | Runs `lint/sync.sh` at the `platform` commit sent after a change to `lint/`, with the flags in the repo's `.lint-sync`, builds and tests, then pushes `chore: sync lint configs` to `main` with the GitHub App's token. If the build fails, it opens a PR instead. It pushes nothing when no copy changed. | `contracts`, `sandbox`, `api`, `web` |
+| `contracts-bump.yml` | Sets a new `contracts` version, runs the repo's CI on it, then pushes `build(deps): bump contracts to X.Y.Z` to `main` with the update bot's token, or opens a PR from `deps/contracts-X.Y.Z` if the CI fails. Does nothing in a repo that doesn't reference `contracts`. See [Update bot](#update-bot). | `sandbox`, `api`, `web` |
+| `lint-sync.yml` | Runs `lint/sync.sh` at the `platform` commit sent after a change to `lint/`, with the flags in the repo's `.lint-sync`, runs the repo's CI, then pushes `chore: sync lint configs` to `main`, or opens a PR from `chore/lint-sync-<short sha>` if the CI fails. It pushes nothing when no copy changed. | `contracts`, `sandbox`, `api`, `web` |
+| `update-push.yml` | The shared last step of the two above: runs the repo's reusable CI on the update commit, then fast-forwards `main` to it, or opens the PR. | `contracts-bump.yml`, `lint-sync.yml` |
+| `lint-updated.yml` | Runs on pushes to `platform`'s `main` that change `lint/`, never on PRs, and sends `lint-updated` with the commit to `contracts`, `sandbox`, `api` and `web`. Skipped while `UPDATE_BOT_APP_ID` isn't set, like the notification in `proto-release.yml`. | `platform` |
 | `container-publish.yml` | buildx → GHCR, multi-arch, tagged with the commit SHA, and with the version on a tag. A merge to `main` publishes an image. | `api`, `web`, scenario images |
 | `release-binary.yml` | `dotnet publish` for linux-x64 and linux-arm64 → GitHub Release | `sandbox` |
 | `sandbox-template.yml` | Builds the qcow2 sandbox template with Packer, with the pinned harness and scenario images. Runs on the **self-hosted runner** on the course VM, because it needs KVM. Public repos can't use that runner, so it is started from the private deploy repo. | deploy repo |
@@ -80,6 +82,8 @@ CI runs on pull requests only. Branches must be up to date with `main` before me
 | `node-ci.yml` | `node-version` (`24`), `working-directory` (`.`) | `ci / Node checks` |
 | `proto-ci.yml` | `buf-version` (`1.75.0`), `dotnet-version`, `node-version`, `dotnet-project` (`dotnet/KubernetesLearning.Contracts`), `ts-directory` (`ts`) | `ci / Protobuf checks` |
 
+All three also take `ref`, the commit to check. It is empty on PRs, which check the PR's commit; the update bot sets it to its update commit.
+
 A Node package needs a `package-lock.json`, a `build` script, and `@biomejs/biome` and `typescript` as dev dependencies.
 
 The job names are fixed, so the check names don't change. Once a repository's `ci.yml` has run, add its check to that repository's `main` ruleset as required, next to the PR title check. Don't add it earlier: a required check that has never reported blocks every merge.
@@ -107,9 +111,9 @@ lint/sync.sh --dotnet --node ../contracts
 
 `docs` isn't synced. It has no code, so it keeps its own `.editorconfig`.
 
-`sync.sh` also writes `.lint-sync` in the repo: the `platform` commit the copies came from, and the flags. A later run without flags reuses them. The file is rewritten only when a copy or the flags change, and `platform` itself has none. `sync.sh` refuses to run from uncommitted changes in `lint/`, because `.lint-sync` must name a commit that holds the copied files, and it won't write through a symlink.
+`sync.sh` also writes `.lint-sync` in the repo: the `platform` commit the copies came from, and the flags. A later run without flags reuses them. The file is rewritten when a copy or the flags change, and also when the recorded commit isn't in the history of the `platform` checkout or holds other copies. That happens after syncing from a `platform` PR branch: the squash merge leaves the branch commit off `main`, and the next sync from `main` moves the pin onto it even though the copies are the same. Otherwise a `lint/` change that doesn't touch a repo's copies leaves its `.lint-sync` alone. `platform` itself has none. `sync.sh` refuses to run from uncommitted changes in `lint/`, because `.lint-sync` must name a commit that holds the copied files, and it won't write through a symlink.
 
-After a change to `lint/` merges, the update bot (platform#31) runs `lint-sync.yml` in each repo with lint copies. It syncs, builds and tests, then pushes `chore: sync lint configs` to `main`, or opens a PR for the repo's owner if the build fails. Only the first sync, while scaffolding a repo, is done by hand.
+After a change to `lint/` merges, the [update bot](#update-bot) runs `lint-sync.yml` in each repo with lint copies. It syncs, runs the repo's CI, then pushes `chore: sync lint configs` to `main`, or opens a PR for the repo's owner if the CI fails. Only the first sync, while scaffolding a repo, is done by hand.
 
 `--check` changes nothing: it prints a diff for each copy that differs and exits 1. The reusable CI checks out `platform` at the commit in `.lint-sync` and runs it, so a hand edit fails, but a newer change in `platform` doesn't block a repo while its sync is pending. Don't edit the copies in a repo. Settings for one repo go in its project files, in a nested `Directory.Build.props` that imports the root one, or in a nested `biome.json` with `"extends": "//"`.
 
@@ -120,6 +124,101 @@ After a change to `lint/` merges, the update bot (platform#31) runs `lint-sync.y
 | Protobuf | `buf lint` |
 
 Projects fresh from `dotnet new` don't pass as generated. Run `dotnet format` once, because the templates ship CRLF line endings and a byte order mark, then seal the template's types (CA1852) and add their access modifiers (IDE0040).
+
+## Update bot
+
+The update bot keeps `sandbox`, `api` and `web` on the latest `contracts` release, and `contracts`, `sandbox`, `api` and `web` on the latest lint configs, without anyone opening a PR.
+
+| Event | Sent by | Payload | Runs in each repo |
+|---|---|---|---|
+| `contracts-published` | `contracts`, through `proto-release.yml`, after it publishes a release | `{"version": "X.Y.Z"}` | `contracts-bump.yml` |
+| `lint-updated` | `platform`'s `lint-updated.yml`, on a push to `main` that changes `lint/` | `{"commit": "<40-character platform commit>"}` | `lint-sync.yml` |
+
+Both reusable workflows work the same way:
+
+1. Check out the repo's `main`, make the change, and stop if nothing changed.
+2. Commit the change through the GitHub API with the update bot's token (`.github/actions/update-branch/`), on top of `main`, to the update branch: `deps/contracts-X.Y.Z` or `chore/lint-sync-<short sha>`. GitHub signs commits the App makes through the API, so they show as verified like the rest of `main`.
+3. `update-push.yml` runs the repo's reusable CI (`dotnet-ci`, `node-ci` or `proto-ci`) on that commit, the same checks a PR gets. Tests come with them once the CI runs tests.
+4. If the CI passes, it fast-forwards `main` to the commit and deletes the branch. The App is on the `main` ruleset's bypass list, so this needs no PR. The push to `main` triggers the repo's `push` workflows like any merge.
+5. If the CI fails, or `main` moved meanwhile, it opens a PR from the update branch instead, assigned to the users who own `*` in the repo's `.github/CODEOWNERS`. If that PR is already open, the branch just gets the new commit.
+
+Only the checks in the reusable CI run. Extra jobs in a repo's own `ci.yml`, such as `sandbox`'s Native AOT publish, run only on PRs.
+
+A repo calls both from small workflows that run on `repository_dispatch`. `sandbox`'s:
+
+```yaml
+name: contracts-bump
+
+on:
+  repository_dispatch:
+    types: [contracts-published]
+
+permissions: {}
+
+concurrency:
+  group: contracts-bump
+
+jobs:
+  bump:
+    permissions:
+      contents: read
+      packages: read
+    uses: kubernetes-learning-platform/platform/.github/workflows/contracts-bump.yml@main
+    with:
+      version: ${{ github.event.client_payload.version }}
+      ci: dotnet-ci
+    secrets:
+      app-private-key: ${{ secrets.UPDATE_BOT_PRIVATE_KEY }}
+```
+
+```yaml
+name: lint-sync
+
+on:
+  repository_dispatch:
+    types: [lint-updated]
+
+permissions: {}
+
+concurrency:
+  group: lint-sync
+
+jobs:
+  sync:
+    permissions:
+      contents: read
+    uses: kubernetes-learning-platform/platform/.github/workflows/lint-sync.yml@main
+    with:
+      commit: ${{ github.event.client_payload.commit }}
+      ci: dotnet-ci
+    secrets:
+      app-private-key: ${{ secrets.UPDATE_BOT_PRIVATE_KEY }}
+```
+
+`ci` is the reusable CI the repo's `ci.yml` calls: `dotnet-ci` in `sandbox` and `api`, `node-ci` in `web`, `proto-ci` in `contracts`. `contracts` has only the `lint-sync` caller. The `concurrency` group runs one update of each kind at a time, so two pushes to `main` don't race. An event older than the repo's state does nothing: `lint-sync` skips a commit that the repo's `.lint-sync` already has in its history, and `contracts-bump` never moves a repo to an older version.
+
+### How the bump finds the version
+
+`contracts-bump.yml` looks only for the two package names and changes nothing else:
+
+| Package | Where it looks | How it sets the version |
+|---|---|---|
+| `KubernetesLearning.Contracts` (NuGet) | Every tracked `*.csproj` and `Directory.Packages.props` with `Include="KubernetesLearning.Contracts"` | Rewrites the `Version="…"` on that line |
+| `@kubernetes-learning-platform/contracts` (npm) | Every tracked `package.json` that lists it in `dependencies` or `devDependencies` | `npm install --save-exact --ignore-scripts` in that folder, so `package-lock.json` changes with it |
+
+- **Pin one exact version.** In a .NET repo, prefer Central Package Management: the version once in `Directory.Packages.props`, as `<PackageVersion Include="KubernetesLearning.Contracts" Version="0.1.0" />`, and a `PackageReference` without a version in each project. A `Version` on a `PackageReference` in a project file works too. Keep the element on one line. In `package.json`, pin it without `^` or `~`.
+- **No reference, no bump.** A repo that references neither package gets a notice and no commit, which is the case for all three until they use `contracts`.
+- **GitHub Packages auth.** The npm install reads the package from GitHub Packages with the caller's `GITHUB_TOKEN`, so the caller grants `packages: read`, and each consuming repo needs read access to the package in its settings (**Manage Actions access**). The bump sets both `NODE_AUTH_TOKEN` and `GITHUB_PACKAGES_TOKEN`, so it works with or without the repo's own `.npmrc`. The NuGet change is a text edit; the restore that checks it happens in the repo's CI, which needs the same auth once the repo references `contracts`.
+
+### The App
+
+The bot is an organization-owned GitHub App. Workflows read its client ID from the organization variable `UPDATE_BOT_APP_ID` and its private key from the organization secret `UPDATE_BOT_PRIVATE_KEY`, and mint short-lived tokens with `actions/create-github-app-token`, scoped to one repo and to Contents write (plus Pull requests write for the PR).
+
+- **Permissions:** Contents read and write, Pull requests read and write, Metadata read. Nothing else, so it can't change workflow files.
+- **Installed on** `contracts`, `sandbox`, `api` and `web` only. `platform` mints its token for those four repos to send `lint-updated`, so the App needs no installation on `platform`.
+- **Variable and secret** are available only to `platform`, `contracts`, `sandbox`, `api` and `web`, not to `docs`, the deploy repo or `.github-private`.
+- **Bypass:** the App is on the `main` ruleset bypass list in `contracts`, `sandbox`, `api` and `web`, and in no other repo.
+- **Never on PRs:** `lint-updated.yml` runs only on pushes to `main`, and the callers run only on `repository_dispatch`, so no PR code ever runs with the App's key.
 
 ## Conventions
 
@@ -175,6 +274,7 @@ Deploys run from a private deploy repo: a manual `workflow_dispatch` takes the i
 ```
 platform/
 ├── .github/workflows/     # the reusable workflows above
+├── .github/actions/       # update-branch, the update bot's commit step
 ├── lint/                  # .editorconfig, Directory.Build.props, biome.json, sync.sh
 ├── deploy/vm/             # install script, envmgr unit, libvirt network, nftables, Caddyfile
 └── dev/                   # local dev Compose

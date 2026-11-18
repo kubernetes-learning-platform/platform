@@ -10,11 +10,14 @@ Copies the shared lint configs into the root of <repo-dir>:
   Directory.Build.props   with --dotnet
   biome.json              with --node
 
-It records the platform commit and the flags in <repo-dir>/.lint-sync, which it
-rewrites only when a copy or the flags change. Without --dotnet or --node it uses
-the flags recorded there. platform itself gets no .lint-sync. It refuses to sync
-from uncommitted changes in lint/, because .lint-sync must name a commit that
-holds the copied files.
+It records the platform commit and the flags in <repo-dir>/.lint-sync. It rewrites
+that file when a copy or the flags change, or when the recorded commit is not in
+the history of this platform checkout or holds other copies, as after syncing
+from a PR branch that was later squash-merged. Otherwise it leaves it alone, so a
+lint/ change that doesn't touch the repo's copies changes nothing there. Without
+--dotnet or --node it uses the flags recorded there. platform itself gets no
+.lint-sync. It refuses to sync from uncommitted changes in lint/, because
+.lint-sync must name a commit that holds the copied files.
 
   --check   change nothing; show a diff for each copy that differs and exit 1 if
             any do. Check out platform at the commit in .lint-sync first, so only
@@ -78,6 +81,7 @@ is_platform=false
 state_file="$target/$state_name"
 
 has_state=false
+recorded_commit=""
 recorded_dotnet=false
 recorded_node=false
 if [[ "$is_platform" == false && -f "$state_file" && ! -L "$state_file" ]]; then
@@ -90,6 +94,7 @@ if [[ "$is_platform" == false && -f "$state_file" && ! -L "$state_file" ]]; then
     case "$key" in
       commit)
         [[ "$value" =~ ^[0-9a-f]{40}$ ]] || die "bad commit in $state_file: $value"
+        recorded_commit="$value"
         ;;
       dotnet | node)
         [[ "$value" == true || "$value" == false ]] || die "bad value in $state_file: $key=$value"
@@ -124,6 +129,18 @@ if [[ "$is_platform" == false && "$check" == false ]]; then
     die "lint/ has uncommitted changes; commit them first so $state_name can name a commit that holds them"
 fi
 
+stale_pin=false
+if [[ "$has_state" == true && -n "$commit" && "$recorded_commit" != "$commit" ]]; then
+  lint_paths=()
+  for file in "${files[@]}"; do
+    lint_paths+=("lint/$file")
+  done
+  if ! git -C "$platform_dir" merge-base --is-ancestor "$recorded_commit" "$commit" 2>/dev/null ||
+    ! git -C "$platform_dir" diff --quiet "$recorded_commit" "$commit" -- "${lint_paths[@]}" 2>/dev/null; then
+    stale_pin=true
+  fi
+fi
+
 drift=false
 changed=false
 for file in "${files[@]}"; do
@@ -152,7 +169,8 @@ if [[ "$is_platform" == false ]]; then
       drift=true
       echo "missing   $state_name"
     fi
-  elif [[ "$changed" == true || "$has_state" == false || "$dotnet" != "$recorded_dotnet" || "$node" != "$recorded_node" ]]; then
+  elif [[ "$changed" == true || "$has_state" == false || "$stale_pin" == true ||
+    "$dotnet" != "$recorded_dotnet" || "$node" != "$recorded_node" ]]; then
     {
       echo "# Written by platform/lint/sync.sh. Don't edit."
       echo "commit=$commit"

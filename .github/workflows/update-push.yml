@@ -1,0 +1,119 @@
+name: update-push
+
+# Runs the repo's reusable CI on an update bot commit, then fast-forwards main to it, or opens a PR if that fails.
+on:
+  workflow_call:
+    inputs:
+      ci:
+        description: The reusable CI that checks the commit, as in the repo's ci.yml. dotnet-ci, node-ci or proto-ci.
+        type: string
+        required: true
+      branch:
+        description: The update branch that holds the commit.
+        type: string
+        required: true
+      sha:
+        description: The commit to check and push.
+        type: string
+        required: true
+      title:
+        description: The commit subject, used as the PR title.
+        type: string
+        required: true
+      app-id:
+        description: The update bot App's client ID.
+        type: string
+        required: true
+    secrets:
+      app-private-key:
+        description: The update bot App's private key.
+        required: true
+
+permissions: {}
+
+jobs:
+  dotnet:
+    if: inputs.ci == 'dotnet-ci'
+    permissions:
+      contents: read
+    uses: kubernetes-learning-platform/platform/.github/workflows/dotnet-ci.yml@main
+    with:
+      ref: ${{ inputs.sha }}
+
+  node:
+    if: inputs.ci == 'node-ci'
+    permissions:
+      contents: read
+    uses: kubernetes-learning-platform/platform/.github/workflows/node-ci.yml@main
+    with:
+      ref: ${{ inputs.sha }}
+
+  proto:
+    if: inputs.ci == 'proto-ci'
+    permissions:
+      contents: read
+    uses: kubernetes-learning-platform/platform/.github/workflows/proto-ci.yml@main
+    with:
+      ref: ${{ inputs.sha }}
+
+  push:
+    name: Push to main or open a PR
+    needs: [dotnet, node, proto]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Create the update bot's token
+        id: token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc
+        with:
+          client-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.app-private-key }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Push to main or open a PR
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ inputs.branch }}
+          SHA: ${{ inputs.sha }}
+          TITLE: ${{ inputs.title }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          echo "Check results: $RESULTS"
+          if [[ " $RESULTS " == *" success "* && " $RESULTS " != *" failure "* && " $RESULTS " != *" cancelled "* ]]; then
+            if gh api -X PATCH "repos/$REPO/git/refs/heads/main" -f sha="$SHA" -F force=false --silent; then
+              echo "Pushed $SHA to main: $TITLE"
+              gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" --silent ||
+                echo "::warning::Pushed to main, but couldn't delete $BRANCH."
+              exit 0
+            fi
+            body="The checks passed, but the update bot couldn't push this to \`main\`, which may have moved in the meantime, so it opened this PR instead. Run: $RUN_URL"
+          else
+            body="The update bot's checks failed on this commit, so it opened this PR instead of pushing to \`main\`. Run: $RUN_URL"
+          fi
+
+          open="$(gh api "repos/$REPO/pulls?state=open&head=${REPO%%/*}:$BRANCH" --jq '.[0].number // empty')"
+          if [[ -n "$open" ]]; then
+            echo "::warning::Not pushed to main. PR #$open from $BRANCH is already open and now has this commit."
+            exit 0
+          fi
+
+          number="$(jq -n --arg title "$TITLE" --arg head "$BRANCH" --arg body "$body" \
+            '{title: $title, head: $head, base: "main", body: $body}' |
+            gh api "repos/$REPO/pulls" --input - --jq .number)"
+          echo "::warning::Not pushed to main. Opened PR #$number from $BRANCH."
+
+          owners="$(gh api "repos/$REPO/contents/.github/CODEOWNERS" --jq .content 2>/dev/null | base64 -d |
+            awk '$1 == "*" { for (i = 2; i <= NF; i++) if ($i ~ /^@[^\/]+$/) print substr($i, 2) }' || true)"
+          if [[ -z "$owners" ]]; then
+            echo "::warning::No user owns * in .github/CODEOWNERS, so PR #$number has no assignee."
+            exit 0
+          fi
+          printf '%s\n' "$owners" | jq -R -s '{assignees: (split("\n") | map(select(length > 0)))}' |
+            gh api "repos/$REPO/issues/$number/assignees" --input - --silent ||
+            echo "::warning::Couldn't assign PR #$number to ${owners//$'\n'/, }."

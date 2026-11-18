@@ -1,0 +1,33 @@
+name: update-branch
+description: >-
+  Commits the checked-out repo's changes on top of its HEAD and points an update branch at
+  the commit, through the GitHub API, so GitHub signs it as the App.
+
+inputs:
+  token:
+    description: The update bot App's token, with Contents write on the repo.
+    required: true
+  branch:
+    description: The update branch to create or move, such as deps/contracts-0.2.0.
+    required: true
+  message:
+    description: The commit subject.
+    required: true
+
+outputs:
+  sha:
+    description: The new commit.
+    value: ${{ steps.commit.outputs.sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: Commit the changes to the update branch
+      id: commit
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ github.repository }}
+        BRANCH: ${{ inputs.branch }}
+        MESSAGE: ${{ inputs.message }}
+      run: '"$GITHUB_ACTION_PATH/commit.sh"'
