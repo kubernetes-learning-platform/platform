@@ -12,12 +12,12 @@ Shared tooling for every kubernetes-learning-platform repo. Nothing here runs as
 | `.github/actions/` | `update-branch`, the update bot's commit step, used by `contracts-bump.yml` and `lint-sync.yml` |
 | `lint/` | Canonical `.editorconfig`, `Directory.Build.props` and `biome.json`, plus `sync.sh` to copy them into a repo |
 | `deploy/vm/` | The install script and config files for the course VM |
-| `dev/` | The local dev Compose file: Postgres, RabbitMQ, an optional DinD sandbox profile |
+| `dev/` | The local dev Compose file: Postgres and Caddy, one origin on `localhost:8080`. RabbitMQ joins in Milestone 2. |
 
 The course VM (16 vCPU, 32 GB) runs everything and is reached only over Tailscale. Caddy serves our Cloudflare domain with a DNS-01 certificate. `envmgr` runs under systemd on the host. The deploy format for the stack, Docker Compose or a Helm chart on k3s, is OPEN.
 
 - **Owner:** Filip.
-- **Status:** `pr-title.yml`, `copilot-review.yml`, `pr-assign.yml`, `dotnet-ci.yml`, `node-ci.yml`, `proto-ci.yml`, `proto-release.yml`, `platform-check.yml`, the update bot (`contracts-bump.yml`, `lint-sync.yml`, `update-push.yml`, `lint-updated.yml`, `.github/actions/update-branch/`) and `lint/` exist. The CI workflows don't run tests yet. Everything else is planned in the setup issues.
+- **Status:** `pr-title.yml`, `copilot-review.yml`, `pr-assign.yml`, `dotnet-ci.yml`, `node-ci.yml`, `proto-ci.yml`, `proto-release.yml`, `platform-check.yml`, the update bot (`contracts-bump.yml`, `lint-sync.yml`, `update-push.yml`, `lint-updated.yml`, `.github/actions/update-branch/`) and `lint/` exist. The CI workflows don't run tests yet (platform#42). Everything else is planned in the setup issues.
 - **Design:** `README.md` here, and ARCHITECTURE §8 and ADR 0003 in the `docs` repo. Where they disagree, the `docs` repo wins.
 
 ## Layout
@@ -26,12 +26,14 @@ The course VM (16 vCPU, 32 GB) runs everything and is reached only over Tailscal
 platform/
 ├── .github/workflows/   # pr-title, copilot-review, pr-assign, dotnet-ci, node-ci, proto-ci, proto-release,
 │                        # contracts-bump, lint-sync, update-push, lint-updated, container-publish,
-│                        # release-binary, sandbox-template, platform-check
+│                        # release-version, sandbox-release, sandbox-template, platform-check
 ├── .github/actions/     # update-branch: action.yml, commit.sh
 ├── lint/                # .editorconfig, Directory.Build.props, biome.json, sync.sh
 ├── deploy/vm/           # install.sh, envmgr unit, libvirt network, nftables, Caddyfile, *.env.example
-└── dev/                 # docker-compose.dev.yml
+└── dev/                 # docker-compose.dev.yml, Caddyfile.dev
 ```
+
+Scripts outside `lint/`, `deploy/` and `dev/` go in `scripts/`.
 
 ## Build and check
 

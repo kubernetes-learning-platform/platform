@@ -4,7 +4,7 @@
 
 Part of [kubernetes-learning-platform](https://github.com/kubernetes-learning-platform/docs), a live Kubernetes lab with an optional AI helper. The [docs repository](https://github.com/kubernetes-learning-platform/docs) describes the overall system.
 
-**Owner:** Filip · **Status:** planned layout, scaffolding lands in M1. Nothing in here runs as a service.
+**Owner:** Filip · **Status:** the CI workflows, the `contracts` release, the update bot and `lint/` exist; the rest lands in Milestone 1 and later. Nothing in here runs as a service.
 
 ---
 
@@ -48,7 +48,8 @@ The workflows here are reusable (`on: workflow_call`), so the other repositories
 | `update-push.yml` | The shared last step of the two above: runs the repo's reusable CI on the update commit, then fast-forwards `main` to it, or opens the PR. | `contracts-bump.yml`, `lint-sync.yml` |
 | `lint-updated.yml` | Runs on pushes to `platform`'s `main` that change `lint/`, never on PRs, and sends `lint-updated` with the commit to `contracts`, `sandbox`, `api` and `web`. Skipped while `UPDATE_BOT_APP_ID` isn't set, like the notification in `proto-release.yml`. | `platform` |
 | `container-publish.yml` | buildx → GHCR, multi-arch, tagged with the commit SHA, and with the version on a tag. A merge to `main` publishes an image. | `api`, `web`, scenario images |
-| `release-binary.yml` | `dotnet publish` for linux-x64 and linux-arm64 → GitHub Release | `sandbox` |
+| `release-version.yml` | Picks the next version from the commit subject; shared by `proto-release` and `sandbox-release` (platform#20) | `contracts`, `sandbox` |
+| `sandbox-release.yml` | On a `feat` or `fix` merge to `sandbox`'s `main`: the harness as Native AOT, and `envmgr` and `sbx` self-contained, for linux-x64 and linux-arm64 → GitHub Release, and `SandboxClient` → GitHub Packages (platform#20) | `sandbox` |
 | `sandbox-template.yml` | Builds the qcow2 sandbox template with Packer, with the pinned harness and scenario images. Runs on the **self-hosted runner** on the course VM, because it needs KVM. Public repos can't use that runner, so it is started from the private deploy repo. | deploy repo |
 | `platform-check.yml` | Runs on `platform`'s own PRs: actionlint, shellcheck on every `*.sh`, and `lint/sync.sh --check .`. Required in `platform`'s ruleset. | `platform` |
 | `pr-title.yml` | Fails a PR whose title isn't a Conventional Commit (max 72 characters, no trailing period) | every repo |
@@ -244,7 +245,7 @@ One course-provided VM (16 vCPU, 32 GB RAM, full root access) runs everything ([
 |---|---|
 | **The stack** | Caddy, `web`, `api`, Postgres, RabbitMQ. The deploy format, Docker Compose or a Helm chart on single-node k3s, is OPEN. |
 | **`envmgr`** | A systemd service on the host, because it needs `/dev/kvm` and libvirt |
-| **The sandboxes** | QEMU/libvirt VMs on an isolated network if the VM supports nested virtualization, otherwise Sysbox containers (OPEN, platform#6) |
+| **The sandboxes** | QEMU/libvirt VMs on an isolated network if the VM supports nested virtualization, otherwise Sysbox node and workstation containers (OPEN, platform#6). The nodes are Sysbox machines either way ([ADR 0004](https://github.com/kubernetes-learning-platform/docs/blob/main/adr/0004-node-machines-in-the-sandbox.md)). |
 | **The self-hosted runner** | Deploys and the sandbox template build. Its own user and label, registered only to private repos. |
 | **Observability** (testing) | Prometheus, Grafana, Loki and a log collector, with no published port |
 
@@ -271,7 +272,7 @@ Deploys run from a private deploy repo: a manual `workflow_dispatch` takes the i
 
 ## dev/
 
-`docker-compose.dev.yml` runs Postgres and RabbitMQ with named volumes, so the backend can run on any laptop without KVM (platform#5). `api` can use a **fake** sandbox with no broker. A `sandbox` profile adds `envmgr` with the Docker provider and a privileged DinD container, for a real sandbox locally (platform#13).
+`docker-compose.dev.yml` runs Postgres with a named volume, and Caddy, so the stack runs on any laptop, Windows or Mac, without KVM (platform#5). Caddy serves `http://localhost:8080`: `/` goes to `next dev`, and `/api` and `/ws` to `api`, both on the host, as in production. `api` uses the **fake** sandbox, so no broker is needed; RabbitMQ joins in Milestone 2. No sandbox runs locally: real sandboxes run on the team's test VM.
 
 ## Layout
 
