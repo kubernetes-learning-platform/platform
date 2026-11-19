@@ -168,6 +168,7 @@ jobs:
     if: needs.bump.outputs.sha != ''
     permissions:
       contents: read
+      packages: read
     uses: kubernetes-learning-platform/platform/.github/workflows/update-push.yml@main
     with:
       ci: ${{ inputs.ci }}

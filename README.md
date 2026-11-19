@@ -71,6 +71,7 @@ jobs:
   ci:
     permissions:
       contents: read
+      packages: read
     uses: kubernetes-learning-platform/platform/.github/workflows/dotnet-ci.yml@main
 ```
 
@@ -85,6 +86,8 @@ CI runs on pull requests only. Branches must be up to date with `main` before me
 All three also take `ref`, the commit to check. It is empty on PRs, which check the PR's commit; the update bot sets it to its update commit.
 
 A Node package needs a `package-lock.json`, a `build` script, and `@biomejs/biome` and `typescript` as dev dependencies.
+
+`dotnet-ci.yml` and `node-ci.yml` grant `packages: read` and pass the caller's `GITHUB_TOKEN` to `dotnet restore` or `npm ci` as `GITHUB_PACKAGES_TOKEN`, which the repo's `nuget.config` or `.npmrc` reads to install the `contracts` packages. Every job that calls them, directly or through the update bot, grants `packages: read` too; a called job can't get a permission its caller didn't grant, so the workflow wouldn't start.
 
 The job names are fixed, so the check names don't change. Once a repository's `ci.yml` has run, add its check to that repository's `main` ruleset as required, next to the PR title check. Don't add it earlier: a required check that has never reported blocks every merge.
 
@@ -187,6 +190,7 @@ jobs:
   sync:
     permissions:
       contents: read
+      packages: read
     uses: kubernetes-learning-platform/platform/.github/workflows/lint-sync.yml@main
     with:
       commit: ${{ github.event.client_payload.commit }}
@@ -195,7 +199,7 @@ jobs:
       app-private-key: ${{ secrets.UPDATE_BOT_PRIVATE_KEY }}
 ```
 
-`ci` is the reusable CI the repo's `ci.yml` calls: `dotnet-ci` in `sandbox` and `api`, `node-ci` in `web`, `proto-ci` in `contracts`. `contracts` has only the `lint-sync` caller. The `concurrency` group runs one update of each kind at a time, so two pushes to `main` don't race. An event older than the repo's state does nothing: `lint-sync` skips a commit that the repo's `.lint-sync` already has in its history, and `contracts-bump` never moves a repo to an older version.
+`ci` is the reusable CI the repo's `ci.yml` calls: `dotnet-ci` in `sandbox` and `api`, `node-ci` in `web`, `proto-ci` in `contracts`. `contracts` has only the `lint-sync` caller. Both callers grant `packages: read`, `contracts` included, because `update-push.yml`'s .NET and Node jobs ask for it. The `concurrency` group runs one update of each kind at a time, so two pushes to `main` don't race. An event older than the repo's state does nothing: `lint-sync` skips a commit that the repo's `.lint-sync` already has in its history, and `contracts-bump` never moves a repo to an older version.
 
 ### How the bump finds the version
 
@@ -207,8 +211,8 @@ jobs:
 | `@kubernetes-learning-platform/contracts` (npm) | Every tracked `package.json` that lists it in `dependencies` or `devDependencies` | `npm install --save-exact --ignore-scripts` in that folder, so `package-lock.json` changes with it |
 
 - **Pin one exact version.** In a .NET repo, prefer Central Package Management: the version once in `Directory.Packages.props`, as `<PackageVersion Include="KubernetesLearning.Contracts" Version="0.1.0" />`, and a `PackageReference` without a version in each project. A `Version` on a `PackageReference` in a project file works too. Keep the element on one line. In `package.json`, pin it without `^` or `~`.
-- **No reference, no bump.** A repo that references neither package gets a notice and no commit, which is the case for all three until they use `contracts`.
-- **GitHub Packages auth.** The npm install reads the package from GitHub Packages with the caller's `GITHUB_TOKEN`, so the caller grants `packages: read`, and each consuming repo needs read access to the package in its settings (**Manage Actions access**). The bump sets both `NODE_AUTH_TOKEN` and `GITHUB_PACKAGES_TOKEN`, so it works with or without the repo's own `.npmrc`. The NuGet change is a text edit; the restore that checks it happens in the repo's CI, which needs the same auth once the repo references `contracts`.
+- **No reference, no bump.** A repo that references neither package gets a notice and no commit.
+- **GitHub Packages auth.** GitHub Packages needs a token even to read a public package. The npm install uses the caller's `GITHUB_TOKEN`, so the caller grants `packages: read`. The bump sets both `NODE_AUTH_TOKEN` and `GITHUB_PACKAGES_TOKEN`, so it works with or without the repo's own `.npmrc`. The NuGet change is a text edit; the restore that checks it is `dotnet-ci`'s, with the same token.
 
 ### The App
 
