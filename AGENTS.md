@@ -43,7 +43,8 @@ There is no build. Before saying a change is done:
 ## Rules
 
 - **Required check names.** The job names in `dotnet-ci.yml`, `node-ci.yml` and `proto-ci.yml` (`.NET checks`, `Node checks`, `Protobuf checks`) are part of the required check names in the callers' rulesets, as in `ci / .NET checks`. Renaming one blocks every merge in the repos that require it until their rulesets are updated. The update bot also calls the three through `update-push.yml` with their `ref` input, so keep `ref` working.
-- **Blast radius.** A change to a reusable workflow's inputs, outputs or behaviour breaks every caller at `@main`. Keep it backward compatible or update the callers in the same piece of work.
+- **Blast radius.** A change to a reusable workflow's inputs, outputs or behaviour breaks every caller at `@main`. Keep it backward compatible or update the callers in the same piece of work. A new permission in a called job must also be granted by every caller, or the caller's workflow won't start, so update the callers in the same piece of work.
+- **Package reads.** `dotnet-ci.yml` and `node-ci.yml` grant `packages: read` and pass `github.token` as `GITHUB_PACKAGES_TOKEN` to the restore step only, for the `contracts` packages. So every caller of them, of `update-push.yml`, `contracts-bump.yml` and `lint-sync.yml` grants `packages: read`, `contracts`' `lint-sync` caller included.
 - **Workflow security.** Reusable workflows are `on: workflow_call`. `permissions` defaults to `{}`, and each job grants only what it needs. Never put `${{ github.event.* }}` or other untrusted input directly into `run:`; pass it through `env:`. Third-party actions are pinned to a full commit SHA. Every job has `timeout-minutes`.
 - **Secrets.** Only `*.env.example` files are committed. Never real env files, tokens, Tailscale auth keys, the Cloudflare token or GitHub App keys.
 - **Scripts** start with `set -euo pipefail` and quote their variables.

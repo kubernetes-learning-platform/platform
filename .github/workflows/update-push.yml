@@ -36,6 +36,7 @@ jobs:
     if: inputs.ci == 'dotnet-ci'
     permissions:
       contents: read
+      packages: read
     uses: kubernetes-learning-platform/platform/.github/workflows/dotnet-ci.yml@main
     with:
       ref: ${{ inputs.sha }}
@@ -44,6 +45,7 @@ jobs:
     if: inputs.ci == 'node-ci'
     permissions:
       contents: read
+      packages: read
     uses: kubernetes-learning-platform/platform/.github/workflows/node-ci.yml@main
     with:
       ref: ${{ inputs.sha }}

@@ -3,7 +3,7 @@
 This repo holds shared tooling for every kubernetes-learning-platform repo: reusable GitHub Actions workflows, canonical lint configs, the install script and deploy files for the course VM, and the local dev Compose. Nothing here runs as a service. Changes here affect **every** repo. The full design is in the `docs` repo (ARCHITECTURE.md §8).
 
 ## When reviewing, focus on
-- **Blast radius.** Call out any change to a reusable workflow's inputs, outputs or behaviour that would break the repos calling it at `@main`. Flag a renamed job in `dotnet-ci.yml`, `node-ci.yml` or `proto-ci.yml`: its name is part of the callers' required check names.
+- **Blast radius.** Call out any change to a reusable workflow's inputs, outputs or behaviour that would break the repos calling it at `@main`. Flag a renamed job in `dotnet-ci.yml`, `node-ci.yml` or `proto-ci.yml`: its name is part of the callers' required check names. Flag a new permission in a called job, which every caller must also grant.
 - **Workflow security.**
   - Reusable workflows are `on: workflow_call`.
   - `permissions` defaults to `{}`, with each job granting only what it needs.
