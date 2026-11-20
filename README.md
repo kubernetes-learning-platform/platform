@@ -272,7 +272,28 @@ Deploys run from a private deploy repo: a manual `workflow_dispatch` takes the i
 
 ## dev/
 
-`docker-compose.dev.yml` runs Postgres with a named volume, and Caddy, so the stack runs on any laptop, Windows or Mac, without KVM (platform#5). Caddy serves `http://localhost:8080`: `/` goes to `next dev`, and `/api` and `/ws` to `api`, both on the host, as in production. `api` uses the **fake** sandbox, so no broker is needed; RabbitMQ joins in Milestone 2. No sandbox runs locally: real sandboxes run on the team's test VM.
+`docker-compose.dev.yml` runs Postgres 18 with a named volume, and Caddy, so the stack runs on any laptop, Windows or Mac, without KVM (platform#5). `api` and `next dev` run on the host as usual, and Caddy puts them behind one origin, with the same routes as production. `api` uses the **fake** sandbox, so no broker is needed; RabbitMQ joins in Milestone 2. No sandbox runs locally: real sandboxes run on the team's test VM.
+
+```bash
+docker compose -f dev/docker-compose.dev.yml up -d --wait
+docker compose -f dev/docker-compose.dev.yml down
+```
+
+`down` keeps the database; `down -v` deletes it.
+
+| Address | Goes to |
+|---|---|
+| `http://localhost:8080/api/*` and `/ws/*` | `api` on the host, port 5149 (`dotnet run`), WebSockets included |
+| `http://localhost:8080/`, everything else | `next dev` on the host, port 3000, hot reload included |
+| `localhost:5432` | Postgres, database `kubelab`, user `kubelab` |
+
+`api` connects with:
+
+```
+ConnectionStrings__Db=Host=localhost;Port=5432;Database=kubelab;Username=kubelab;Password=kubelab
+```
+
+These credentials are local-only defaults, not a secret: both ports are published on `127.0.0.1` only. Caddy reaches the host through `host.docker.internal`, which Docker Desktop and OrbStack provide; the Compose file also maps it to `host-gateway` for Linux, where `api` and `next dev` then have to listen on all interfaces. A route whose app isn't running returns 502.
 
 ## Layout
 

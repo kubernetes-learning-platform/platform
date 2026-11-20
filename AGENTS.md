@@ -17,7 +17,7 @@ Shared tooling for every kubernetes-learning-platform repo. Nothing here runs as
 The course VM (16 vCPU, 32 GB) runs everything and is reached only over Tailscale. Caddy serves our Cloudflare domain with a DNS-01 certificate. `envmgr` runs under systemd on the host. The deploy format for the stack, Docker Compose or a Helm chart on k3s, is OPEN.
 
 - **Owner:** Filip.
-- **Status:** `pr-title.yml`, `copilot-review.yml`, `pr-assign.yml`, `dotnet-ci.yml`, `node-ci.yml`, `proto-ci.yml`, `proto-release.yml`, `platform-check.yml`, the update bot (`contracts-bump.yml`, `lint-sync.yml`, `update-push.yml`, `lint-updated.yml`, `.github/actions/update-branch/`) and `lint/` exist. The CI workflows don't run tests yet (platform#42). Everything else is planned in the setup issues.
+- **Status:** `pr-title.yml`, `copilot-review.yml`, `pr-assign.yml`, `dotnet-ci.yml`, `node-ci.yml`, `proto-ci.yml`, `proto-release.yml`, `platform-check.yml`, the update bot (`contracts-bump.yml`, `lint-sync.yml`, `update-push.yml`, `lint-updated.yml`, `.github/actions/update-branch/`), `lint/` and the dev Compose in `dev/` exist. The CI workflows don't run tests yet (platform#42). Everything else is planned in the setup issues.
 - **Design:** `README.md` here, and ARCHITECTURE §8 and ADR 0003 in the `docs` repo. Where they disagree, the `docs` repo wins.
 
 ## Layout
@@ -41,6 +41,7 @@ There is no build. Before saying a change is done:
 
 - Run `actionlint` on changed workflows and `shellcheck` on changed scripts, when they are installed.
 - For a reusable workflow, check every repo that calls it at `@main` and say which ones the change affects.
+- For `dev/`, bring the stack up with `docker compose -f dev/docker-compose.dev.yml up -d --wait` and check the routes on `localhost:8080`.
 
 ## Rules
 
@@ -51,6 +52,7 @@ There is no build. Before saying a change is done:
 - **Secrets.** Only `*.env.example` files are committed. Never real env files, tokens, Tailscale auth keys, the Cloudflare token or GitHub App keys.
 - **Scripts** start with `set -euo pipefail` and quote their variables.
 - **Deploy files.** Image tags are pinned, never `latest`. Caddy routes `/` to `web` and `/api` and `/ws` to `api`, and listens only on the VM's Tailscale address. `envmgr` stays a systemd unit on the host. Don't commit to Compose or Helm for the stack until an ADR decides it.
+- **Dev Compose.** `dev/` publishes its ports on `127.0.0.1` only and uses the same Caddy routes as production. Its Postgres credentials are local-only defaults, written in the README; no real secret goes there.
 - **Network isolation.** Sandboxes reach only `envmgr`'s harness endpoint (`10.67.0.1:7071`). `envmgr`'s gRPC port accepts only the stack. Sandboxes can't reach RabbitMQ. The tailnet ACL allows only SSH and the app's HTTPS port. Never widen any of these without the user's say-so.
 - **No infrastructure code.** The course VM is set up by `deploy/vm/install.sh`. Sandboxes are created by `envmgr`, not here.
 - **Self-hosted runner.** Only the deploy workflow and `sandbox-template.yml` run on it, both started from the private deploy repo. The org's runner group blocks public repos, and that stays so.
